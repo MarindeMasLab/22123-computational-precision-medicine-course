@@ -1,0 +1,114 @@
+---
+title: "Exercise 6 — Instructor answer key"
+subtitle: "Independent reconstruction assessment with extracellular rates"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Teaching position
+
+This answer key evaluates a **grouped leave-one-exchange-out direction classifier built from GEM features**. It keeps the fixed expression-only FBA/FVA assessment separate as an untuned baseline. It does not validate absolute rates, matched normal biology, tumor specificity, or clinical utility.
+
+## 1. Run this: canonical preflight
+
+```{r}
+root <- c(".", "..")
+root <- root[file.exists(file.path(root, "R/model_io.R"))][1]
+if (is.na(root)) stop("Open from the hands-on_session root or this Exercise 6 folder.")
+root <- normalizePath(root)
+setwd(root)
+source(file.path(root, "R/exercise6_workflow.R"))
+result <- exercise6_run(root)
+result$preflight$preflight
+```
+
+**Expected result:** both suffixed Exercise 2 contexts and the native Exercise 3 FVA checkpoint pass source-hash, objective, medium, status, and residual checks. The source model hash is `fd87a09e24e5b61e1b3c9c69178484792735a55123a32f5dec57be08cb66fe17`.
+
+**Interpretation:** the MCF7/Jain and GTEx/Keibler contexts are unmatched and use different medium proxies. Jain observations are assessment-only and are not read by reconstruction, medium creation, FVA constraints, KO construction, or pair selection.
+
+## 2. Run this: source and replicate QC
+
+```{r}
+obs <- result$observations$observations
+data.frame(source_rows = nrow(obs), source_row_ids = length(unique(obs$source_row_id)),
+  exchange_groups = length(unique(obs$normalized_exchange_id)),
+  calibrated_units = paste(unique(obs$rate_unit), collapse = ";"))
+table(obs$observed_group_direction)
+```
+
+**Expected result:** the exact `ACH_000019` match yields 86 calibrated, numeric, exact/curated-mapped rows, 43 exchange groups, and two retained replicates per group. Three groups are `near_zero_or_ambiguous`; the remaining groups have a concordant uptake or secretion sign.
+
+**Interpretation:** source rates are `fmol/cell/h`, while model fluxes are `mmol/gDW/h`. The versioned policy uses a source-scale exact-zero computational tolerance of `1e-12` and a separate model-scale tolerance of `1e-7`; these are not interchangeable and do not create an absolute-rate bridge.
+
+## 3. Run this: fixed untuned baseline
+
+```{r}
+result$classification[, c("exchange_reaction_id", "observed_group_direction", "fba_flux",
+  "fva_minimum", "fva_maximum", "model_allowed_direction", "fixed_model_category")]
+result$coverage
+```
+
+**Expected result:** all 43 MCF7 Jain exchange groups have fresh full-panel FVA features and fixed categories. The FVA endpoint statuses are retained and all canonical endpoints are optimal. The separate GTEx/Keibler table contains all 900 mapped rows across 18 exchange groups.
+
+**Interpretation:** `possible` means the model permits a direction under the retained-objective FVA setup. It does not mean that the direction is required, selected by nominal FBA, quantitatively correct, or experimentally matched.
+
+## 4. Run this: grouped fold and leakage check
+
+```{r}
+assignments <- utils::read.csv("outputs/grouped_loocv_fold_assignments.csv")
+folds <- utils::read.csv("outputs/grouped_loocv_predictions.csv")
+stopifnot(nrow(assignments) == 43L, nrow(folds) == 43L,
+  all(assignments$no_heldout_source_row_in_training),
+  all(assignments$no_heldout_exchange_in_training),
+  all(folds$leakage_assertion))
+assignments[1, ]
+```
+
+**Expected result:** each of the 43 unique exchange groups is held out exactly once; both source replicates for the held-out exchange are absent from training. The classifier's center, scale, and class centroids are fitted inside each outer training fold.
+
+**Interpretation:** because fold-specific fitted-state hashes vary, leaving out a supported training exchange can change the fitted state. This satisfies the cross-validation requirement; repeating a fixed model comparison would not.
+
+## 5. Run this: metrics and coverage
+
+```{r}
+result$metrics
+table(folds$unscored_reason, useNA = "ifany")
+utils::read.csv("outputs/loocv_confusion_matrix.csv")
+```
+
+**Expected result:** 40 folds are scoreable and 3 are explicitly ambiguous held-out folds. The metrics denominator is 40 for both the fold-trained classifier and the training-fold majority baseline.
+
+**Interpretation:** report the denominator with accuracy, balanced accuracy, or macro-F1. Do not generalize these 40 exchange groups to independent biological cohorts. Ambiguous folds remain visible in coverage rather than silently entering or leaving the denominator.
+
+## 6. Run this: per-model accuracy and confusion matrices
+
+```{r}
+utils::read.csv("outputs/model_accuracy_summary.csv")
+utils::read.csv("outputs/mcf7_jain_confusion_matrix.csv")
+utils::read.csv("outputs/gtex_keibler_confusion_matrix.csv")
+knitr::include_graphics("outputs/model_confusion_matrices.png")
+```
+
+**Expected result:** MCF7/Jain is **35/40 = 87.5%** and GTEx/Keibler is **9/10 = 90.0%**. The MCF7 confusion matrix is 23/5 for observed uptake and 0/12 for observed secretion; the GTEx/Keibler matrix is 5/1 and 0/4. The remaining groups are explicitly ambiguous and unscored.
+
+**Interpretation:** these metrics describe the two grouped direction-classifier procedures. They do not establish quantitative flux accuracy, matched-normal validation, tumor specificity, or clinical utility.
+
+## 7. Run this: figures and release claims
+
+```{r}
+knitr::include_graphics("outputs/measured_direction_vs_model_allowed.png")
+knitr::include_graphics("outputs/coverage_status.png")
+knitr::include_graphics("outputs/loocv_predictions_observed.png")
+```
+
+**Expected result:** the figures distinguish held-out Jain directions from model-derived FVA allowance and show every fold, including unsupported and ambiguous states.
+
+**Interpretation:** the safe conclusion is that this workflow assesses a fold-trained direction classifier using fixed GEM-derived features. It does not establish absolute-rate agreement, matched tumor/normal validation, tumor specificity, clinical utility, or validation of the reconstruction itself. Exercise 4/5 results remain exploratory model hypotheses.

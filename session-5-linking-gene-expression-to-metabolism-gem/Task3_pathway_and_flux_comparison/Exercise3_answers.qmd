@@ -1,0 +1,734 @@
+---
+title: "Exercise 3 — Pathway and flux comparison"
+subtitle: "Instructor answer key | synthetic teaching and native context analysis"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Scope and output separation
+
+This key deliberately separates the synthetic FBA/FVA teaching fixture from the native Exercise 2 contexts. Synthetic reaction IDs and flux units are not Recon1 or biological data. Native comparison is conditional on two distinct exchange scenarios and independent transcriptomic sources; it is not a matched tumor/healthy experiment, and FBA biomass is not measured growth.
+
+## 1. Canonical context provenance and preflight
+
+### Run this
+
+```{r}
+#| label: answer-native-provenance
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+setwd(root)
+source("R/model_io.R")
+outdir <- "Task2_expression_integration/outputs"
+mcf7_rds <- file.path(outdir, "context_MCF7_ACH_000019_Jain.rds")
+healthy_rds <- file.path(outdir, "context_GTEx_breast_Keibler.rds")
+mcf7_xml <- file.path(outdir, "context_MCF7_ACH_000019_Jain.xml")
+healthy_xml <- file.path(outdir, "context_GTEx_breast_Keibler.xml")
+stopifnot(all(file.exists(c(mcf7_rds, healthy_rds, mcf7_xml, healthy_xml))))
+mcf7 <- readRDS(mcf7_rds)
+healthy <- readRDS(healthy_rds)
+context_qc <- do.call(rbind, lapply(list(mcf7, healthy), function(x) data.frame(
+  scenario_id = x$provenance$scenario_id,
+  medium_id = x$provenance$medium_id,
+  medium_source = x$provenance$medium_source,
+  source_model_sha256 = x$provenance$source_model_sha256,
+  objective_id = x$model$objective_id,
+  objective_sense = x$model$objective_sense,
+  imat_settings_id = x$settings$id,
+  milp_status = x$status,
+  incumbent_feasible = x$incumbent_feasible,
+  incumbent_biomass_value = x$incumbent_biomass_value,
+  reconstructed_fba_status = x$reconstructed_fba_status,
+  max_abs_sv = x$max_abs_sv,
+  stringsAsFactors = FALSE
+)))
+contexts <- list(mcf7, healthy)
+accepted_milp <- vapply(contexts, function(x) identical(x$status, "optimal") ||
+  (identical(x$status, "time_limit") && isTRUE(x$solver_timeout_enforced)), logical(1))
+stopifnot(identical(context_qc$scenario_id,
+  c("MCF7_ACH_000019_Jain", "GTEx_breast_Keibler")),
+  length(unique(context_qc$source_model_sha256)) == 1L,
+  length(unique(context_qc$objective_id)) == 1L,
+  length(unique(context_qc$objective_sense)) == 1L,
+  length(unique(context_qc$imat_settings_id)) == 1L,
+  all(accepted_milp),
+  all(vapply(contexts, function(x) identical(x$model$source_sha256,
+    x$provenance$source_model_sha256) && identical(x$model$objective_id,
+    x$provenance$objective_id) && identical(x$model$objective_sense,
+    x$provenance$objective_sense), logical(1))),
+  all(context_qc$incumbent_feasible), all(context_qc$incumbent_biomass_value > 0),
+  all(context_qc$reconstructed_fba_status == "optimal"),
+  all(context_qc$max_abs_sv <= 1e-7))
+context_qc
+```
+
+### Expected result
+
+Both canonical RDS files and their corresponding XML files exist. The scenario IDs are `MCF7_ACH_000019_Jain` and `GTEx_breast_Keibler`; the objective ID/sense and `session5_imat_recon1_v1` settings ID agree. The MCF7 scenario uses the assumption-based Jain RPMI recipe proxy and the healthy scenario uses `Keibler_184A1_EV_EGF5_growth_adjusted_v1`; these medium IDs are intentionally different. The Exercise 2 handoff reports the generated solver/QC status. Source measurements remain held out from context construction.
+
+### Interpretation
+
+This establishes the saved objects' provenance/QC and model feasibility under their own scenario settings. It does not make the source profiles matched samples or their biomass values experimental growth rates. A `time_limit` is acceptable only with an explicitly verified incumbent and all downstream checks; current canonical contexts are reported as `optimal`.
+
+## 2. Verify the exact Recon1 panel
+
+### Run this
+
+```{r}
+#| label: answer-native-panel
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+setwd(root)
+source("R/model_io.R")
+source_model <- load_model("datasets_and_models/models/RECON1_biomass.xml", "config/model_manifest.csv")
+mcf7 <- readRDS("Task2_expression_integration/outputs/context_MCF7_ACH_000019_Jain.rds")
+healthy <- readRDS("Task2_expression_integration/outputs/context_GTEx_breast_Keibler.rds")
+jain_source <- utils::read.csv("datasets_and_models/treated/cancer/metabolomics/Jain2012_Database_S1.csv",
+  stringsAsFactors = FALSE)
+keibler_directions <- utils::read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_observed_exchange_directions.csv",
+  stringsAsFactors = FALSE)
+jain_mcf7 <- subset(jain_source, cell_line == "MCF7" & calibrated == 1 &
+  mapping_status %in% c("exact_name_or_id", "curated_alias") &
+  !is.na(exchange_reaction_id) & nzchar(exchange_reaction_id))
+jain_mcf7$reaction_id <- paste0("R_", sub("^R_", "", jain_mcf7$exchange_reaction_id))
+keibler_directions$reaction_id <- paste0("R_", sub("^R_", "", keibler_directions$exchange_reaction_id))
+panel_ids <- sort(intersect(unique(jain_mcf7$reaction_id), unique(keibler_directions$reaction_id)))
+stopifnot(length(panel_ids) == 17L, nrow(jain_mcf7) == 86L,
+  length(unique(jain_mcf7$reaction_id)) == 43L, nrow(keibler_directions) == 18L)
+stopifnot(all(panel_ids %in% source_model$reaction_ids),
+  all(panel_ids %in% mcf7$model$reaction_ids), all(panel_ids %in% healthy$model$reaction_ids))
+reaction_equation <- function(reaction_id, model) {
+  column <- model$S[, reaction_id]
+  nonzero <- which(column != 0)
+  term <- function(index) {
+    coefficient <- abs(as.numeric(column[[index]]))
+    metabolite <- rownames(model$S)[[index]]
+    label <- model$metabolite_names[[metabolite]] %||% metabolite
+    paste0(if (coefficient == 1) "" else paste0(format(coefficient, trim = TRUE), " "), label)
+  }
+  left <- nonzero[as.numeric(column[nonzero]) < 0]
+  right <- nonzero[as.numeric(column[nonzero]) > 0]
+  paste(if (length(left)) paste(vapply(left, term, character(1)), collapse = " + ") else "∅",
+    "→", if (length(right)) paste(vapply(right, term, character(1)), collapse = " + ") else "∅")
+}
+panel_details <- data.frame(reaction_id = panel_ids,
+  reaction_name = unname(source_model$reaction_names[panel_ids]),
+  equation = vapply(panel_ids, reaction_equation, character(1), model = source_model),
+  gpr = unname(source_model$gpr[panel_ids]),
+  model_placement = ifelse(panel_ids %in% source_model$exchange_ids, "exchange", "non-exchange"),
+  extracellular_coefficient = vapply(panel_ids, function(id) {
+    z <- source_model$S[, id]
+    as.numeric(z[which(z != 0)])
+  }, numeric(1)), stringsAsFactors = FALSE)
+panel_details
+```
+
+### Expected result
+
+The panel is computed as the intersection of calibrated, mapped MCF7 Jain exchanges and Keibler observed-direction exchanges. There are 43 mapped MCF7 Jain exchange IDs and 18 Keibler direction-summary IDs; **17 exact reaction IDs** are common, exist in the source model, and are present in both saved context models. The table reports each exact ID, reaction name, equation, GPR, placement, and extracellular coefficient.
+
+### Interpretation
+
+Each common reaction has two calibrated MCF7 Jain rate observations (in `fmol/cell/h`) and a Keibler observed-direction summary across 50 assayed conditions. Keibler's source workbook does not state a rate unit, so its direction counts are qualitative evidence only; they are not quantitative fluxes and are not imposed as FVA constraints. The expanded set is an extracellular exchange panel, not a comprehensive intracellular pathway panel. Interpret flux sign with the reported stoichiometry and model convention.
+
+## 3. Run native FBA/FVA and save the comparison
+
+### Run this
+
+```{r}
+#| label: answer-native-fva
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+setwd(root)
+source("R/model_io.R")
+mcf7 <- readRDS("Task2_expression_integration/outputs/context_MCF7_ACH_000019_Jain.rds")
+healthy <- readRDS("Task2_expression_integration/outputs/context_GTEx_breast_Keibler.rds")
+jain_source <- utils::read.csv("datasets_and_models/treated/cancer/metabolomics/Jain2012_Database_S1.csv",
+  stringsAsFactors = FALSE)
+keibler_directions <- utils::read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_observed_exchange_directions.csv",
+  stringsAsFactors = FALSE)
+jain_mcf7 <- subset(jain_source, cell_line == "MCF7" & calibrated == 1 &
+  mapping_status %in% c("exact_name_or_id", "curated_alias") &
+  !is.na(exchange_reaction_id) & nzchar(exchange_reaction_id))
+jain_mcf7$reaction_id <- paste0("R_", sub("^R_", "", jain_mcf7$exchange_reaction_id))
+keibler_directions$reaction_id <- paste0("R_", sub("^R_", "", keibler_directions$exchange_reaction_id))
+panel_ids <- sort(intersect(unique(jain_mcf7$reaction_id), unique(keibler_directions$reaction_id)))
+stopifnot(length(panel_ids) == 17L, nrow(jain_mcf7) == 86L,
+  length(unique(jain_mcf7$reaction_id)) == 43L, nrow(keibler_directions) == 18L)
+prepare_model <- function(context) {
+  model <- context$model
+  model$scenario_id <- context$provenance$scenario_id
+  model$medium_id <- context$provenance$medium_id
+  model$medium_source <- context$provenance$medium_source
+  model$imat_settings_id <- context$settings$id
+  model$effective_exchange_bounds <- data.frame(reaction_id = model$exchange_ids,
+    lower_bound = unname(model$lb[model$exchange_ids]), upper_bound = unname(model$ub[model$exchange_ids]),
+    stringsAsFactors = FALSE)
+  model
+}
+mcf7_model <- prepare_model(mcf7)
+healthy_model <- prepare_model(healthy)
+fraction <- 0.9
+tolerance <- 1e-7
+mcf7_fva <- run_fva(mcf7_model, panel_ids, fraction, tolerance)
+healthy_fva <- run_fva(healthy_model, panel_ids, fraction, tolerance)
+if (!all(c(mcf7_fva$status, healthy_fva$status) == "optimal")) {
+  stop("At least one native FVA did not complete optimally; do not interpret the comparison.")
+}
+reaction_equation <- function(reaction_id, model) {
+  column <- model$S[, reaction_id]
+  nonzero <- which(column != 0)
+  term <- function(index) {
+    coefficient <- abs(as.numeric(column[[index]]))
+    metabolite <- rownames(model$S)[[index]]
+    label <- model$metabolite_names[[metabolite]] %||% metabolite
+    paste0(if (coefficient == 1) "" else paste0(format(coefficient, trim = TRUE), " "), label)
+  }
+  left <- nonzero[as.numeric(column[nonzero]) < 0]
+  right <- nonzero[as.numeric(column[nonzero]) > 0]
+  paste(if (length(left)) paste(vapply(left, term, character(1)), collapse = " + ") else "∅",
+    "→", if (length(right)) paste(vapply(right, term, character(1)), collapse = " + ") else "∅")
+}
+make_rows <- function(model, context, fva) {
+  x <- fva$intervals
+  jain_counts <- as.data.frame(table(jain_mcf7$reaction_id), stringsAsFactors = FALSE)
+  names(jain_counts) <- c("reaction_id", "Jain_MCF7_observation_count")
+  jain_units <- unique(jain_mcf7[, c("reaction_id", "rate_unit")])
+  jain_panel <- jain_counts[match(x$reaction_id, jain_counts$reaction_id), , drop = FALSE]
+  jain_unit_panel <- jain_units[match(x$reaction_id, jain_units$reaction_id), , drop = FALSE]
+  keibler_panel <- keibler_directions[match(x$reaction_id, keibler_directions$reaction_id), , drop = FALSE]
+  data.frame(reaction_id = x$reaction_id,
+    reaction_name = unname(model$reaction_names[x$reaction_id]),
+    equation = vapply(x$reaction_id, reaction_equation, character(1), model = model),
+    gpr = unname(model$gpr[x$reaction_id]),
+    model_placement = ifelse(x$reaction_id %in% model$exchange_ids, "exchange", "non-exchange"),
+    extracellular_coefficient = vapply(x$reaction_id, function(id) {
+      column <- model$S[, id]
+      nonzero <- which(column != 0)
+      external <- nonzero[model$compartments[rownames(model$S)[nonzero]] == "e"]
+      if (length(external) == 1L) as.numeric(column[external]) else NA_real_
+    }, numeric(1)),
+    scenario = context$provenance$scenario_id,
+    Jain_MCF7_observation_count = as.integer(jain_panel$Jain_MCF7_observation_count),
+    Jain_MCF7_rate_unit = jain_unit_panel$rate_unit,
+    Keibler_direction_observations = keibler_panel$observations,
+    Keibler_uptake_observations = keibler_panel$uptake_observations,
+    Keibler_secretion_observations = keibler_panel$secretion_observations,
+    Keibler_zero_observations = keibler_panel$zero_observations,
+    Keibler_unit_note = keibler_panel$unit_note,
+    fba_flux = x$fba_flux, fva_minimum = x$minimum, fva_maximum = x$maximum,
+    fva_width = x$maximum - x$minimum, fba_status = fva$baseline_fba_status,
+    fva_min_status = x$min_status, fva_max_status = x$max_status,
+    medium_id = context$provenance$medium_id, medium_source = context$provenance$medium_source,
+    objective_id = model$objective_id, objective_sense = model$objective_sense,
+    objective_terms = paste(names(model$objective)[model$objective != 0],
+      format(model$objective[model$objective != 0], digits = 16, trim = TRUE), sep = "=", collapse = ";"),
+    imat_settings_id = context$settings$id, fva_fraction = fva$fraction,
+    tolerance = fva$tolerance, solver = fva$solver, model_sha256 = model$source_sha256,
+    stringsAsFactors = FALSE)
+}
+native_comparison <- rbind(make_rows(mcf7_model, mcf7, mcf7_fva),
+  make_rows(healthy_model, healthy, healthy_fva))
+stopifnot(all(native_comparison$fba_status == "optimal"),
+  all(native_comparison$fva_min_status == "optimal"), all(native_comparison$fva_max_status == "optimal"),
+  all(native_comparison$fva_minimum <= native_comparison$fva_maximum),
+  nrow(native_comparison) == 34L,
+  all(native_comparison$Jain_MCF7_observation_count == 2L),
+  all(native_comparison$Jain_MCF7_rate_unit == "fmol/cell/h"),
+  all(native_comparison$Keibler_direction_observations == 50L))
+output_dir <- file.path(root, "Task3_pathway_and_flux_comparison", "outputs")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+utils::write.csv(native_comparison, file.path(output_dir, "native_context_fva_comparison.csv"), row.names = FALSE)
+provenance <- data.frame(scenario_id = c(mcf7$provenance$scenario_id, healthy$provenance$scenario_id),
+  medium_id = c(mcf7$provenance$medium_id, healthy$provenance$medium_id),
+  medium_source = c(mcf7$provenance$medium_source, healthy$provenance$medium_source),
+  objective_id = c(mcf7$model$objective_id, healthy$model$objective_id),
+  objective_sense = c(mcf7$model$objective_sense, healthy$model$objective_sense),
+  objective_terms = vapply(list(mcf7$model$objective, healthy$model$objective), function(objective) {
+    paste(names(objective)[objective != 0], format(objective[objective != 0], digits = 16, trim = TRUE),
+      sep = "=", collapse = ";")
+  }, character(1)),
+  imat_settings_id = c(mcf7$settings$id, healthy$settings$id),
+  fva_fraction = fraction, tolerance = tolerance,
+  model_sha256 = c(mcf7$model$source_sha256, healthy$model$source_sha256),
+  solver = c(mcf7_fva$solver, healthy_fva$solver), stringsAsFactors = FALSE)
+utils::write.csv(provenance, file.path(output_dir, "native_context_fva_provenance.csv"), row.names = FALSE)
+native_comparison
+```
+
+### Expected result
+
+The displayed table has one row per reaction per scenario for all 17 common exchanges (34 rows total). The CSV also retains reaction metadata, source coverage, statuses and provenance. Keibler direction counts are qualitative, not quantitative rates or FVA constraints. All LP statuses must be `optimal`, and intervals must be ordered.
+
+Numerical fluxes are generated at execution time and are intentionally not hard-coded in this key. If a solver status, provenance check, or interval check fails, stop and report the failure; do not substitute a legacy object or zero flux.
+
+### Interpretation
+
+FBA is one selected optimizing vector; FVA endpoints describe feasible intervals under a 90% retained-objective condition. Wide ranges reflect mathematical flexibility in this model and these bounds, not experimental variation. Narrow ranges indicate stronger model constraints, not biological certainty. A difference is conditional on each context's evidence **and** its distinct exchange constraints.
+
+## 4. Inspect source assumptions and context differences
+
+### Run this
+
+```{r}
+#| label: answer-native-assumptions
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+setwd(root)
+qc <- utils::read.csv("Task2_expression_integration/outputs/reconstruction_qc.csv", stringsAsFactors = FALSE)
+scenario_bounds <- utils::read.csv("Task2_expression_integration/outputs/effective_exchange_bounds.csv", stringsAsFactors = FALSE)
+jain <- utils::read.csv("datasets_and_models/treated/cancer/metabolomics/Jain2012_Database_S1.csv", stringsAsFactors = FALSE)
+jain_mcf7 <- subset(jain, cell_line == "MCF7" & calibrated == 1 & mapping_status %in% c("exact_name_or_id", "curated_alias"))
+assumption_summary <- data.frame(
+  context = c("MCF7_ACH_000019_Jain", "GTEx_breast_Keibler"),
+  observations = c(nrow(jain_mcf7), NA_integer_),
+  mapped_exchanges = c(length(unique(jain_mcf7$exchange_reaction_id)), NA_integer_),
+  scenario_input_bound_rows = c(qc$medium_bound_count[match("MCF7_ACH_000019_Jain", qc$scenario_id)],
+    qc$medium_bound_count[match("GTEx_breast_Keibler", qc$scenario_id)]),
+  scenario_exchange_rows = c(sum(scenario_bounds$context == "MCF7_ACH_000019_Jain"),
+    sum(scenario_bounds$context == "GTEx_breast_Keibler")),
+  medium_id = c(qc$medium_id[match("MCF7_ACH_000019_Jain", qc$scenario_id)],
+    qc$medium_id[match("GTEx_breast_Keibler", qc$scenario_id)]),
+  stringsAsFactors = FALSE)
+assumption_summary
+stopifnot(nrow(jain_mcf7) == 86L,
+  length(unique(jain_mcf7$exchange_reaction_id)) == 43L,
+  all(table(jain_mcf7$exchange_reaction_id) == 2L),
+  assumption_summary$scenario_input_bound_rows[1] == 42L,
+  assumption_summary$scenario_input_bound_rows[2] == 42L,
+  assumption_summary$scenario_exchange_rows[1] == 404L,
+  assumption_summary$scenario_exchange_rows[2] == 404L,
+  all(unique(jain_mcf7$rate_unit) == "fmol/cell/h"))
+```
+
+### Expected result
+
+The MCF7 assessment pool has 86 calibrated mapped observations covering 43 exchanges, with two replicates per exchange, all in `fmol/cell/h`. Exercise 2 QC records 42 explicit scenario input-bound rows for each context. `effective_exchange_bounds.csv` records the capped scenario-medium bounds over all 404 exchanges per context; it does not include the iMAT inactivity limits. Jain rate magnitudes are not converted or used as constraints because the MCF7-specific biomass-time conversion is unresolved.
+
+### Interpretation
+
+The MCF7 scenario uses an assumption-based RPMI recipe proxy; the healthy scenario uses GTEx breast expression with Keibler-derived proxy bounds. The proxy uses a shared Exercise 1 biomass-time denominator and does not translate Jain's culture volume/exposure into Recon1 units. Neither source supplies a complete intracellular flux vector. The result combines expression and medium assumptions and cannot be described as a matched-patient comparison, absolute-rate validation, or clinical phenotype.
+
+![Synthetic toy network showing the hard reaction bounds, one FBA solution, and the FVA intervals at 90% objective retention. This static illustration is not regenerated by the worksheet.](outputs/synthetic_toy_network_bounds.png)
+
+### Run this
+
+Run this standalone synthetic fixture; it does not depend on the student worksheet or load/alter either native context.
+
+```{r}
+#| label: answer-synthetic-fva
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+setwd(root)
+source("R/model_io.R")
+S_toy <- Matrix::sparseMatrix(i = c(1, 1, 2, 2), j = c(1, 2, 2, 3),
+  x = c(-1, -1, 1, -1), dims = c(2, 3),
+  dimnames = list(c("toy_substrate_e", "toy_precursor_c"),
+    c("EX_toy_substrate_e", "T_toy_substrate", "BIOMASS_toy")))
+toy <- list(S = S_toy,
+  lb = c(EX_toy_substrate_e = -5, T_toy_substrate = 0, BIOMASS_toy = 0),
+  ub = c(EX_toy_substrate_e = 0, T_toy_substrate = 100, BIOMASS_toy = 100),
+  objective = c(EX_toy_substrate_e = 0, T_toy_substrate = 0, BIOMASS_toy = 1),
+  objective_id = "toy_biomass_objective", objective_sense = "maximize",
+  reaction_ids = colnames(S_toy), metabolite_ids = rownames(S_toy), gene_ids = character(),
+  gpr = stats::setNames(rep("", 3), colnames(S_toy)), exchange_ids = "EX_toy_substrate_e",
+  model_path = "synthetic_fixture", source_sha256 = "synthetic_only", flux_unit = NA_character_,
+  medium_id = NA_character_, medium_source = NA_character_,
+  compartments = c(toy_substrate_e = "e", toy_precursor_c = "c"))
+class(toy) <- "session5_model"
+toy_medium <- list(id = "synthetic-toy-medium", source = "invented software fixture; not biological",
+  bounds = data.frame(reaction_id = "EX_toy_substrate_e", lower_bound = -5, upper_bound = 0,
+    rationale = "allow toy uptake"))
+toy <- set_medium(toy, toy_medium)
+toy_fba <- solve_fba(toy)
+toy_fva <- run_fva(toy, c("EX_toy_substrate_e", "T_toy_substrate", "BIOMASS_toy"), 0.9, 1e-7)
+stopifnot(toy_fba$status == "optimal", toy_fva$status == "optimal",
+  all(toy_fva$intervals$min_status == "optimal"), all(toy_fva$intervals$max_status == "optimal"),
+  abs(toy_fva$intervals$minimum[toy_fva$intervals$reaction_id == "EX_toy_substrate_e"] + 5) < 1e-7,
+  abs(toy_fva$intervals$maximum[toy_fva$intervals$reaction_id == "EX_toy_substrate_e"] + 4.5) < 1e-7,
+  abs(toy_fva$intervals$minimum[toy_fva$intervals$reaction_id == "T_toy_substrate"] - 4.5) < 1e-7,
+  abs(toy_fva$intervals$maximum[toy_fva$intervals$reaction_id == "T_toy_substrate"] - 5) < 1e-7,
+  abs(toy_fva$intervals$minimum[toy_fva$intervals$reaction_id == "BIOMASS_toy"] - 4.5) < 1e-7,
+  abs(toy_fva$intervals$maximum[toy_fva$intervals$reaction_id == "BIOMASS_toy"] - 5) < 1e-7)
+toy_fva_display <- data.frame(
+  reaction_id = toy_fva$intervals$reaction_id,
+  fba_flux = toy_fva$intervals$fba_flux,
+  fva_minimum = toy_fva$intervals$minimum,
+  fva_maximum = toy_fva$intervals$maximum,
+  fva_width = toy_fva$intervals$maximum - toy_fva$intervals$minimum,
+  minimum_status = toy_fva$intervals$min_status,
+  maximum_status = toy_fva$intervals$max_status,
+  stringsAsFactors = FALSE
+)
+list(fba_objective = toy_fba$objective_value, fba_fluxes = toy_fba$fluxes,
+  fva_summary = toy_fva_display)
+```
+
+The figures below distinguish a selected FBA point from feasible FVA intervals and show how interval width depends on objective retention.
+
+```{r}
+#| label: answer-plot-synthetic-panel
+#| fig-cap: "Synthetic teaching panel: one FBA point, conditional FVA ranges, and interval-width sensitivity."
+#| fig-width: 10
+#| fig-height: 8
+if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Install ggplot2 to render these plots.")
+toy_plot_data <- toy_fva$intervals
+toy_plot_data$reaction_id <- factor(toy_plot_data$reaction_id, levels = rev(toy_plot_data$reaction_id))
+p_toy_range <- ggplot2::ggplot(toy_plot_data, ggplot2::aes(y = reaction_id)) +
+  ggplot2::geom_vline(xintercept = 0, color = "#94A3B8", linetype = "dashed", linewidth = 0.6) +
+  ggplot2::geom_segment(ggplot2::aes(x = minimum, xend = maximum, yend = reaction_id),
+    color = "#168B9A", linewidth = 2.2, lineend = "round") +
+  ggplot2::geom_point(ggplot2::aes(x = fba_flux), shape = 21, size = 3.6,
+    fill = "#F28E5B", color = "white", stroke = 0.8) +
+  ggplot2::labs(title = "One FBA point sits inside an FVA-feasible range",
+    subtitle = "Synthetic fixture only · 90% objective retention · arbitrary toy units",
+    x = "Flux in fixture units", y = NULL,
+    caption = "Teal segment: feasible min–max; coral point: one baseline FBA solution.") +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
+    plot.subtitle = ggplot2::element_text(color = "#526579"),
+    panel.grid.minor = ggplot2::element_blank(), axis.text.y = ggplot2::element_text(face = "bold"))
+toy_fractions <- c(1, 0.9, 0.5, 0)
+toy_width_data <- do.call(rbind, lapply(toy_fractions, function(f) {
+  result <- run_fva(toy, toy_fva$reaction_ids, fraction = f, tolerance = 1e-7)
+  if (result$status != "optimal") stop("Synthetic retention FVA failed at ", f)
+  data.frame(fraction = f, reaction_id = result$intervals$reaction_id,
+    width = result$intervals$maximum - result$intervals$minimum)
+}))
+toy_width_data$fraction_label <- factor(paste0(round(100 * toy_width_data$fraction), "%"),
+  levels = paste0(round(100 * toy_fractions), "%"))
+p_toy_width <- ggplot2::ggplot(toy_width_data,
+  ggplot2::aes(x = fraction_label, y = width, group = reaction_id, color = reaction_id)) +
+  ggplot2::geom_line(linewidth = 1.1, alpha = 0.8) + ggplot2::geom_point(size = 3) +
+  ggplot2::facet_wrap(~ reaction_id, scales = "free_y", nrow = 1) +
+  ggplot2::scale_color_manual(values = c("#168B9A", "#E5A443", "#7567A8"), guide = "none") +
+  ggplot2::labs(title = "Objective retention changes feasible flexibility",
+    subtitle = "Synthetic fixture only · 0% removes the biomass floor; width is not experimental uncertainty",
+    x = "Objective retained", y = "FVA interval width (toy units)") +
+  ggplot2::theme_minimal(base_size = 11) +
+  ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
+    plot.subtitle = ggplot2::element_text(color = "#526579"), panel.grid.minor = ggplot2::element_blank(),
+    strip.text = ggplot2::element_text(face = "bold"))
+ggplot2::ggsave(file.path(output_dir, "synthetic_fba_fva_ranges.png"), p_toy_range,
+  width = 8.2, height = 4.5, dpi = 300, bg = "white")
+ggplot2::ggsave(file.path(output_dir, "synthetic_fva_width_by_fraction.png"), p_toy_width,
+  width = 9.2, height = 4.4, dpi = 300, bg = "white")
+p_toy_range
+p_toy_width
+```
+
+### Expected result
+
+The synthetic baseline and all endpoint LPs are `optimal`. The displayed hard bounds are `EX_toy_substrate_e` $[-5,0]$, `T_toy_substrate` $[0,100]$, and `BIOMASS_toy` $[0,100]$ toy units. With 90% of the biomass optimum retained, FVA intervals narrow to exchange $[-5,-4.5]$ and transport/biomass $[4.5,5]$. At 0% retention, the ranges expand to exchange $[-5,0]$ and transport/biomass $[0,5]$ because no biomass floor is imposed. This distinction is the intended learning point. No synthetic ID is a Recon1 reaction ID, and no flux is assigned a biological unit.
+
+The concise table uses `fba_flux` for the single baseline solution, `fva_minimum`/`fva_maximum` for the two endpoint LP results, and `fva_width` for the interval span. `minimum_status` and `maximum_status` are readable outcomes for those separate LPs. The raw API also returns `min_solver_code` and `max_solver_code`; each equals `7` because HiGHS maps model-status code `7` to `optimal`. These backend codes are retained for diagnostics but intentionally omitted from the student-facing summary table; `7` is not a flux value.
+
+### Interpretation
+
+An FBA solver returns one optimum from a potentially non-unique feasible region. FVA independently minimizes/maximizes a target while retaining a fraction of that optimum. The intervals say what the mathematical model permits under its assumptions, not which flux a cell uses or the distribution of experimental measurements. For an exchange with coefficient $-1$, combine the flux sign with that coefficient and the model bounds before saying uptake or secretion. An allowed direction is not obligatory unless the entire interval excludes the opposite direction, and even then the result is model-conditional.
+
+## 5. Lactate: FBA/FVA and the oxygen-bound diagnostic
+
+### Run this
+
+```{r}
+#| label: answer-lactate-capacity
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+lactate <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/native_lactate_capacity_analysis.csv"),
+  stringsAsFactors = FALSE)
+key <- subset(lactate, analysis != "sweep" & reaction_id %in% c("R_EX_glc__D_e", "R_EX_lac__L_e"))
+key[, c("scenario", "analysis", "reaction_id", "biomass", "fba_flux", "pfba_flux", "fva100_minimum", "fva100_maximum")]
+capacity_rows <- subset(lactate, analysis == "shared O2-cap scenario")
+capacity_summary <- do.call(rbind, lapply(split(capacity_rows, capacity_rows$scenario), function(x) {
+  flux_at <- function(reaction_id, field) x[[field]][match(reaction_id, x$reaction_id)]
+  data.frame(scenario = x$scenario[[1]], o2_uptake_upper_bound = x$o2_capacity[[1]],
+    pfba_actual_o2_uptake = -flux_at("R_EX_o2_e", "pfba_flux"),
+    pfba_glucose_uptake = -flux_at("R_EX_glc__D_e", "pfba_flux"),
+    pfba_lactate_secretion = flux_at("R_EX_lac__L_e", "pfba_flux"),
+    lactate_fva_minimum = flux_at("R_EX_lac__L_e", "fva100_minimum"),
+    lactate_fva_maximum = flux_at("R_EX_lac__L_e", "fva100_maximum"), stringsAsFactors = FALSE)
+}))
+capacity_summary[, -1] <- lapply(capacity_summary[, -1], round, digits = 3)
+capacity_summary
+sweep <- subset(lactate, analysis == "sweep")
+sweep_groups <- split(sweep, list(sweep$scenario, sweep$o2_capacity), drop = TRUE)
+oxygen_sensitivity_summary <- do.call(rbind, lapply(sweep_groups, function(x) {
+  flux_at <- function(reaction_id, field) x[[field]][match(reaction_id, x$reaction_id)]
+  data.frame(scenario = x$scenario[[1]], o2_uptake_upper_bound = x$o2_capacity[[1]],
+    pfba_actual_o2_uptake = -flux_at("R_EX_o2_e", "pfba_flux"),
+    pfba_lactate_secretion = flux_at("R_EX_lac__L_e", "pfba_flux"),
+    lactate_fva_minimum = flux_at("R_EX_lac__L_e", "fva100_minimum"),
+    lactate_fva_maximum = flux_at("R_EX_lac__L_e", "fva100_maximum"), stringsAsFactors = FALSE)
+}))
+oxygen_sensitivity_summary <- oxygen_sensitivity_summary[
+  order(oxygen_sensitivity_summary$scenario, oxygen_sensitivity_summary$o2_uptake_upper_bound), ]
+oxygen_sensitivity_summary[, -1] <- lapply(oxygen_sensitivity_summary[, -1], round, digits = 3)
+oxygen_sensitivity_summary
+ratio <- with(capacity_rows,
+  tapply(seq_along(scenario), scenario, function(i) -pfba_flux[i][reaction_id[i] == "R_EX_lac__L_e"] / pfba_flux[i][reaction_id[i] == "R_EX_glc__D_e"]))
+jain <- read.csv(file.path(root, "datasets_and_models/treated/cancer/metabolomics/Jain2012_Database_S1.csv"), stringsAsFactors = FALSE)
+jain_ratio <- with(subset(jain, cell_line == "MCF7" & exchange_reaction_id %in% c("EX_glc__D_e", "EX_lac__L_e")),
+  -mean(observed_rate[exchange_reaction_id == "EX_lac__L_e"]) / mean(observed_rate[exchange_reaction_id == "EX_glc__D_e"]))
+keibler <- read.csv(file.path(root, "datasets_and_models/treated/healthy/metabolomics/Keibler2021_Supporting_File_2.csv"), stringsAsFactors = FALSE)
+keibler_ev5 <- subset(keibler, condition == "EV" & dose_as_reported == 5 & trial == "Trial 1")
+keibler_ratio <- -mean(keibler_ev5$observed_rate[keibler_ev5$metabolite_or_process == "Lactate"]) /
+  mean(keibler_ev5$observed_rate[keibler_ev5$metabolite_or_process == "Glucose"])
+data.frame(scenario = names(ratio), model_lactate_per_glucose = round(as.numeric(ratio), 2),
+  measured_lactate_per_glucose = round(c(MCF7_ACH_000019_Jain = jain_ratio, GTEx_breast_Keibler = keibler_ratio)[names(ratio)], 2))
+```
+
+### Expected result
+
+Plain FBA (O2 uptake bound 10 mmol/gDW/h) selects zero lactate in both contexts even though FVA allows secretion. In the shared-bound scenario (O2 uptake upper bound 1 for both contexts, glucose fixed at its cap, D-lactate closed), pFBA selects about 3.6 mmol/gDW/h for MCF7 (FVA range 0–9.8) and 1.15 for GTEx breast (FVA minimum and maximum both about 1.15). The model lactate/glucose ratios are about 0.85 (MCF7) and 0.31 (GTEx). The held-out measurements give about 0.67 for MCF7 (Jain) and about 1.7 for Keibler 184A1 (a molar ratio, so the unstated Keibler unit cancels if both rates share it). These settings do not establish a tumor glycolytic mechanism: the O2 value is an upper bound, not actual oxygen consumption, and the model does not consistently predict lactate increasing as the O2 bound falls.
+
+### Interpretation
+
+This is a diagnostic of model limitations, not a mechanistic result. Warburg metabolism is aerobic glycolysis and is not captured by reducing an extracellular O2 uptake bound alone. The O2 cap is only an upper bound; at the shared bound 1, the selected pFBA solution uses about 0.057 mmol/gDW/h O2 in MCF7 and 1.0 in GTEx. pFBA minimizes total flux and returns one of many possible optima. In the healthy context the selected pFBA lactate is higher at some less-restrictive O2 bounds and lower at the tight bound, while FVA indicates obligatory lactate only at severe restriction (bound 1 or less). In MCF7 the FVA minimum remains zero throughout, so the model never requires lactate secretion there. The model does not encode quantitative enzyme capacities and does not robustly produce a cancer-greater-than-healthy ordering from expression; in a same-medium swap, both contexts yield nearly the same lactate. Distinct media further confound the native comparison. The measurements also run opposite to the desired ordering in these specific datasets: the Keibler 184A1 lactate/glucose ratio (~1.7) exceeds MCF7 Jain (~0.67). The samples are not matched, the assays differ, and Keibler's absolute-rate unit is unstated. Report these mismatches rather than treating them as validation.
+
+The retained sensitivity figure is [native_lactate_capacity_sweep.png](outputs/native_lactate_capacity_sweep.png). It is a diagnostic: the band and solid/dashed edges are the FVA-feasible range at maximal biomass, and the x-axis is an O2 uptake upper bound rather than actual O2 use. The pFBA selections are in the table/CSV and are not drawn as a dose-response.
+
+## 6. Measured exchange fluxes versus model directions
+
+### Run this
+
+```{r}
+#| label: answer-measured-directions
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+directions <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/measured_vs_model_directions.csv"),
+  stringsAsFactors = FALSE)
+stopifnot(nrow(directions) == 34L)
+table(directions$scenario, directions$agreement)
+subset(directions, agreement != "FBA point matches measured direction",
+  select = c(scenario, reaction_id, measured_mean_rate, measured_direction, fba_flux, fva_minimum, fva_maximum, agreement))
+```
+
+![Measured exchange rates (worksheet output).](outputs/measured_exchange_rates.png)
+
+![Measured versus model exchange directions (worksheet output).](outputs/measured_vs_model_directions.png)
+
+### Expected result
+
+Both cell sources take up glucose, glutamine and the essential amino acids and secrete lactate and alanine; 184A1 also secretes glutamate, aspartate and proline. For MCF7 the FBA point matches the measured direction for 16 of 17 reactions; the exception is lactate (secretion allowed by FVA, 0 to about 10, but the FBA point is 0). For the healthy context 13 of 17 match; lactate, glutamate and proline secretion are allowed but not selected, and aspartate secretion is infeasible (FVA 0 to 0).
+
+### Interpretation
+
+Direction is the only comparison these data support without a unit conversion. Agreement on uptake of the medium nutrients is expected, because the medium allows only those uptakes. The informative rows are the secretions: the model allows most of them but, under biomass maximization, has no reason to choose them. Aspartate is a structural gap: with no aspartate in DMEM, the healthy context cannot export it at 90% of maximal biomass, which points to a missing route or a medium assumption to revisit.
+
+## 7. Pathway-level comparison (final task)
+
+### Run this
+
+```{r}
+#| label: answer-pathway-analysis
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+pathways <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/pathway_summary.csv"),
+  stringsAsFactors = FALSE)
+comparison <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/pathway_comparison.csv"),
+  stringsAsFactors = FALSE)
+coverage <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/pathway_coverage.csv"),
+  stringsAsFactors = FALSE)
+reaction_pathways <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/pathway_reaction_fluxes.csv"),
+  stringsAsFactors = FALSE)
+source(file.path(root, "R/model_io.R"))
+mcf7_context <- readRDS(file.path(root, "Task2_expression_integration/outputs/context_MCF7_ACH_000019_Jain.rds"))
+healthy_context <- readRDS(file.path(root, "Task2_expression_integration/outputs/context_GTEx_breast_Keibler.rds"))
+subsystem_map <- read.csv(file.path(root, "config/recon1_subsystems.csv"), stringsAsFactors = FALSE)
+central <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/central_carbon_fluxes.csv"),
+  stringsAsFactors = FALSE)
+stopifnot(nrow(pathways) == 188L, nrow(comparison) == 94L, nrow(reaction_pathways) == 7484L,
+  !anyDuplicated(reaction_pathways[, c("scenario", "reaction_id")]),
+  all(reaction_pathways$pfba_status == "optimal"), all(reaction_pathways$max_abs_sv <= 1e-7),
+  all(reaction_pathways$subsystem %in% subsystem_map$subsystem),
+  setequal(unique(pathways$scenario), c("MCF7_ACH_000019_Jain", "GTEx_breast_Keibler")),
+  setequal(unique(reaction_pathways$model_sha256), c(mcf7_context$model$source_sha256, healthy_context$model$source_sha256)),
+  all(c("throughput_per_biomass_objective", "carrying_flux_fraction", "limited_by_expression_fraction",
+    "intracellular_flux_share", "carrying_flux_tolerance") %in% names(pathways)),
+  all(c("abs_flux_sum_delta_a_minus_b", "throughput_per_biomass_delta_a_minus_b",
+    "carrying_flux_delta_percentage_points_a_minus_b",
+    "limited_by_expression_delta_percentage_points_a_minus_b") %in% names(comparison)),
+  all(coverage$model_reaction_count == 3742L),
+  sum(pathways$pathway_class == "intracellular pathway") == 180L,
+  sum(pathways$pathway_class == "coverage/excluded from intracellular pathway weights") == 8L)
+largest_flux_share <- comparison[comparison$pathway_class == "intracellular pathway", ]
+largest_flux_share <- largest_flux_share[order(-largest_flux_share$flux_share_a),
+  c("subsystem", "flux_share_a", "flux_share_b", "flux_share_delta_a_minus_b")]
+largest_flux_share[, -1] <- lapply(largest_flux_share[, -1], function(x) round(100 * x, 1))
+head(largest_flux_share, 8)
+largest_availability_delta <- comparison[comparison$pathway_class == "intracellular pathway", ]
+largest_availability_delta <- largest_availability_delta[
+  order(-abs(largest_availability_delta$limited_by_expression_delta_percentage_points_a_minus_b)),
+  c("subsystem", "limited_by_expression_fraction_a", "limited_by_expression_fraction_b",
+    "limited_by_expression_delta_percentage_points_a_minus_b")]
+largest_availability_delta[, 2:3] <- lapply(largest_availability_delta[, 2:3], function(x) round(100 * x, 1))
+head(largest_availability_delta, 8)
+coverage
+central
+```
+
+![All intracellular pathways: pFBA flux share.](outputs/pathway_flux_share_all.png)
+
+![All intracellular pathways: throughput per biomass objective.](outputs/pathway_throughput_per_biomass_all.png)
+
+![All intracellular pathways: pFBA carrying fraction.](outputs/pathway_carrying_fraction_all.png)
+
+![All intracellular pathways: iMAT-limited fraction.](outputs/pathway_expression_limited_fraction_all.png)
+
+### Expected result
+
+The complete comparison has 94 primary subsystem rows: 90 intracellular pathways plus four coverage/excluded categories. The per-context summary has 188 rows; the coverage table accounts for all 3,742 reactions per context, with 1,776 in assigned intracellular pathways and 1,966 in transport/exchange/biomass/Unassigned categories. For example, TCA/glyoxylate accounts for about 29.6% of MCF7 and 32.9% of GTEx intracellular assigned $|v|$ throughput; glycolysis is about 22.8% and 18.8%, and oxidative phosphorylation is about 20.9% in both. All four full-coverage figures and all zero-valued pathways are retained. These are reaction-throughput and objective-normalized proxies, not unique carbon-flow or measured activity.
+
+### Interpretation
+
+The paired table reports MCF7-minus-GTEx differences; fraction deltas are percentage points. pFBA-carrying fraction is based on one pFBA solution using $|v|>10^{-6}$, whereas iMAT-limited fraction means integrated bounds within ±ε that were not already limited before iMAT. A reaction can remain available but carry zero in pFBA. The throughput-per-objective metric is subsystem $\sum |v|$ divided by each model’s pFBA biomass objective, not experimental biomass normalization. The intracellular flux-share denominator excludes transport, exchange/demand, biomass and Unassigned; those classes remain explicitly accounted for in coverage.
+
+Subsystem annotations are inferred from Human1/BiGG mappings. There are 589 unassigned Recon1 reactions, and multi-mapped reactions are assigned to one primary subsystem. Flux-throughput sums can count the same biochemical flow at multiple reactions. The availability plot is expression-related, while pFBA throughput is a single solution affected by both medium and objective. Since the contexts use different media and are unmatched, pathway deltas describe the combined modeled contexts and are not expression-only or general tumor-versus-healthy conclusions.
+
+## Cautions for interpretation
+
+### Run this
+
+```{r}
+#| label: answer-output-provenance-check
+roots <- unique(normalizePath(c(getwd(), file.path(getwd(), ".."), file.path(getwd(), "../..")),
+  winslash = "/", mustWork = FALSE))
+root <- roots[file.exists(file.path(roots, "R/model_io.R"))][1]
+if (is.na(root)) stop("Cannot locate exercises/ root.")
+setwd(root)
+comparison <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/native_context_fva_comparison.csv"),
+  stringsAsFactors = FALSE)
+provenance <- read.csv(file.path(root, "Task3_pathway_and_flux_comparison/outputs/native_context_fva_provenance.csv"),
+  stringsAsFactors = FALSE)
+required <- c("scenario", "medium_id", "medium_source", "objective_id", "objective_sense", "objective_terms",
+  "imat_settings_id", "fva_fraction", "tolerance", "solver", "model_sha256",
+  "fba_status", "fva_min_status", "fva_max_status")
+stopifnot(all(required %in% names(comparison)),
+  all(c("scenario_id", "medium_id", "medium_source", "objective_id", "objective_sense", "objective_terms",
+    "imat_settings_id", "fva_fraction", "tolerance", "solver", "model_sha256") %in% names(provenance)),
+  length(unique(comparison$scenario)) == 2L,
+  length(unique(comparison$medium_id)) == 2L,
+  all(comparison$fba_status == "optimal"), all(comparison$fva_min_status == "optimal"),
+  all(comparison$fva_max_status == "optimal"))
+list(comparison_columns = names(comparison), provenance = provenance)
+```
+
+### Expected result
+
+The comparison contains both canonical scenario IDs and distinct medium IDs, shared objective/iMAT settings, FVA fraction/tolerance, solver, source hash, and FBA/min/max statuses. The comparison and provenance CSVs both exist and retain enough information to identify which stored model/medium/solver result produced each row.
+
+### Interpretation
+
+Do not attribute a native flux difference to expression alone: exchange medium IDs and bounds intentionally differ. The transcriptomic sources are independent and not paired. Jain observations are held out from the MCF7 recipe proxy and are not added as FBA/FVA constraints. Biomass is not measured proliferation, and FVA ranges are not experimental distributions or clinical predictions.
+### Native context figure panel
+
+```{r}
+#| label: answer-plot-native-panel
+#| fig-cap: "All 17 exchange reactions observed in both source datasets. Points are FBA solutions; horizontal ranges are FVA bounds."
+#| fig-width: 12
+#| fig-height: 14
+native_plot_data <- native_comparison
+native_plot_data$scenario_label <- factor(native_plot_data$scenario,
+  levels = c("MCF7_ACH_000019_Jain", "GTEx_breast_Keibler"),
+  labels = c("MCF7 · RPMI recipe proxy", "GTEx breast · Keibler proxy"))
+native_plot_data$reaction_id <- factor(native_plot_data$reaction_id, levels = panel_ids)
+scenario_colors <- c("MCF7 · RPMI recipe proxy" = "#2878B5", "GTEx breast · Keibler proxy" = "#E58B36")
+make_range_plot <- function(data, columns = 3, title = "Selected exchange fluxes and FVA-feasible ranges") {
+  ggplot2::ggplot(data, ggplot2::aes(y = scenario_label)) +
+    ggplot2::geom_vline(xintercept = 0, color = "#94A3B8", linetype = "dashed", linewidth = 0.6) +
+    ggplot2::geom_segment(ggplot2::aes(x = fva_minimum, xend = fva_maximum,
+      yend = scenario_label, color = scenario_label), linewidth = 2.4, lineend = "round") +
+    ggplot2::geom_point(ggplot2::aes(x = fba_flux, color = scenario_label), size = 3.4) +
+    ggplot2::facet_wrap(~ reaction_id, scales = "free_x", ncol = columns) +
+    ggplot2::scale_color_manual(values = scenario_colors, name = "Scenario") +
+    ggplot2::labs(title = title,
+      subtitle = "Native Exercise 2 contexts · 90% objective retention · mmol/gDW/h",
+      x = "Exchange flux (verify sign with stoichiometry)", y = NULL,
+      caption = "FBA points are selected optima; ranges are feasible intervals, not measured distributions.") +
+    ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
+      plot.subtitle = ggplot2::element_text(color = "#526579"), panel.grid.minor = ggplot2::element_blank(),
+      strip.text = ggplot2::element_text(face = "bold"), legend.position = "bottom")
+}
+native_plot_full <- make_range_plot(native_plot_data)
+p_native_range <- native_plot_full
+p_native_width <- ggplot2::ggplot(native_plot_data,
+  ggplot2::aes(x = fva_width, y = reaction_id, fill = scenario_label)) +
+  ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.78), width = 0.68) +
+  ggplot2::facet_wrap(~ scenario_label, ncol = 2, scales = "free_y") +
+  ggplot2::scale_fill_manual(values = scenario_colors, guide = "none") +
+  ggplot2::labs(title = "Model-permitted flexibility by reaction and context",
+    subtitle = "Interval width = FVA maximum − minimum; not experimental variability",
+    x = "FVA interval width (mmol/gDW/h)", y = "Common exchange") +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
+    plot.subtitle = ggplot2::element_text(color = "#526579"), panel.grid.minor = ggplot2::element_blank(),
+    axis.text.y = ggplot2::element_text(size = 7), strip.text = ggplot2::element_text(face = "bold"))
+native_bounds_data <- rbind(
+  data.frame(reaction_id = panel_ids, scenario = mcf7$provenance$scenario_id,
+    lower_bound = unname(mcf7_model$lb[panel_ids])),
+  data.frame(reaction_id = panel_ids, scenario = healthy$provenance$scenario_id,
+    lower_bound = unname(healthy_model$lb[panel_ids])))
+native_bounds_data$scenario_label <- factor(native_bounds_data$scenario,
+  levels = c("MCF7_ACH_000019_Jain", "GTEx_breast_Keibler"),
+  labels = c("MCF7 · RPMI recipe proxy", "GTEx breast · Keibler proxy"))
+native_bounds_data$reaction_id <- factor(native_bounds_data$reaction_id, levels = panel_ids)
+p_native_bounds <- ggplot2::ggplot(native_bounds_data,
+  ggplot2::aes(x = lower_bound, y = reaction_id, fill = scenario_label)) +
+  ggplot2::geom_vline(xintercept = 0, color = "#94A3B8", linetype = "dashed", linewidth = 0.6) +
+  ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.78), width = 0.68) +
+  ggplot2::facet_wrap(~ scenario_label, ncol = 2, scales = "free_y") +
+  ggplot2::scale_fill_manual(values = scenario_colors, guide = "none") +
+  ggplot2::labs(title = "Medium-imposed exchange uptake bounds",
+    subtitle = "Bars show lower bounds only; negative values permit uptake",
+    x = "Exchange lower bound (mmol/gDW/h)", y = "Common measured exchange",
+    caption = "This is a medium-input plot, not FVA; full effective bounds are in the CSV outputs.") +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
+    plot.subtitle = ggplot2::element_text(color = "#526579"), panel.grid.minor = ggplot2::element_blank(),
+    axis.text.y = ggplot2::element_text(size = 7), strip.text = ggplot2::element_text(face = "bold"))
+ggplot2::ggsave(file.path(output_dir, "native_fba_fva_ranges_full.png"), native_plot_full,
+  width = 12, height = 14, dpi = 300, bg = "white")
+ggplot2::ggsave(file.path(output_dir, "native_fba_fva_ranges.png"), p_native_range,
+  width = 10, height = 7, dpi = 300, bg = "white")
+ggplot2::ggsave(file.path(output_dir, "native_fva_widths.png"), p_native_width,
+  width = 12, height = 10, dpi = 300, bg = "white")
+ggplot2::ggsave(file.path(output_dir, "native_exchange_uptake_bounds.png"), p_native_bounds,
+  width = 12, height = 10, dpi = 300, bg = "white")
+p_native_range
+p_native_width
+p_native_bounds
+```
+
+### Expected result
+
+The displayed native figure includes all 17 common measured exchange reactions in both contexts. The FVA-width chart and medium-bound chart remain additional views; the uptake-bound plot is an input-medium summary, not an FVA result, and the width chart is derived from the endpoints already shown in the full FVA panel.
+
+### Interpretation
+
+The native panel shows all measured common exchange reactions. Uptake allowance, FBA points and FVA intervals are distinct: uptake bounds are medium inputs; FBA is one selected optimum; FVA is a feasible range under 90% objective retention. None is an experimental distribution. Different media mean the native MCF7/GTEx comparison does not isolate expression effects.

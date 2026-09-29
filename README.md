@@ -6,7 +6,7 @@ Public teaching materials from the Marindemas Lab for the computational precisio
 
 The classroom bundle is in [`session-5-linking-gene-expression-to-metabolism-gem/`](session-5-linking-gene-expression-to-metabolism-gem/). It contains the six student worksheets, shared R runtime code, required configuration, treated inputs, Recon1 teaching models, and setup instructions.
 
-Start with the [session README](session-5-linking-gene-expression-to-metabolism-gem/README.md) and follow the exercises in order. The public release excludes instructor answer keys, handoff notes, raw source material, preprocessing scripts, tests, rendered HTML, and generated outputs.
+Start with the [session README](session-5-linking-gene-expression-to-metabolism-gem/README.md) and follow the tasks in order. The public release includes optional instructor answer QMDs, but excludes handoff notes, raw source material, preprocessing scripts, tests, rendered HTML, and generated outputs.
 
 ## Scope
 

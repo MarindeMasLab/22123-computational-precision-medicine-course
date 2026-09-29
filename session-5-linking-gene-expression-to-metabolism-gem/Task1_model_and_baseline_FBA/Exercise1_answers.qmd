@@ -1,0 +1,234 @@
+---
+title: "Exercise 1 — Model inspection and baseline FBA"
+subtitle: "Instructor answer key | reproducible results and interpretation"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+  eval: true
+  freeze: false
+---
+
+This guide executes each analysis from the source SBML and versioned medium rather than relying on copied output. Run it from the `exercises/` folder or render it from the repository. Each section gives the command, the result to check, and what the result does—and does not—mean.
+
+## 1. Load and inspect the models
+
+### Run this
+
+```{r}
+#| label: answer-load-inspect-models
+root_candidates <- unique(c(getwd(), file.path(getwd(), "exercises"),
+  dirname(getwd()), dirname(dirname(getwd()))))
+project_root <- root_candidates[file.exists(file.path(root_candidates, "R/model_io.R"))][1L]
+if (is.na(project_root)) stop("Could not find exercises/R/model_io.R from the current directory.")
+project_root <- normalizePath(project_root, mustWork = TRUE)
+knitr::opts_knit$set(root.dir = project_root)
+source(file.path(project_root, "R/model_io.R"))
+
+original <- load_model(file.path(project_root, "datasets_and_models/models/RECON1.xml"),
+  file.path(project_root, "config/model_manifest.csv"))
+hands_on <- load_model(file.path(project_root, "datasets_and_models/models/RECON1_biomass.xml"),
+  file.path(project_root, "config/model_manifest.csv"))
+
+model_report <- function(model, label) {
+  active_reaction <- names(model$objective)[model$objective != 0]
+  data.frame(model = label, genes = length(model$gene_ids),
+    reactions = length(model$reaction_ids), metabolites = length(model$metabolite_ids),
+    exchanges = length(model$exchange_ids), objective_id = model$objective_id,
+    objective_reaction = paste(active_reaction, collapse = "; "),
+    objective_sense = model$objective_sense,
+    S_class = paste(class(model$S), collapse = "/"),
+    S_dimensions = paste(dim(model$S), collapse = " x "),
+    nonzero_stoichiometric_entries = length(model$S@x),
+    source_sha256 = model$source_sha256, stringsAsFactors = FALSE)
+}
+models_report <- rbind(model_report(original, "Original reference"),
+  model_report(hands_on, "Hands-on biomass model"))
+models_report
+
+biomass_bounds <- data.frame(reaction_id = "R_biomass_reaction",
+  lower_bound = hands_on$lb[["R_biomass_reaction"]],
+  upper_bound = hands_on$ub[["R_biomass_reaction"]],
+  objective_coefficient = hands_on$objective[["R_biomass_reaction"]])
+biomass_bounds
+```
+
+### Expected result
+
+The original has 1,905 genes, 3,741 reactions, and 2,766 metabolites; its active objective is `obj` on `R_S6T14g`. The hands-on model has 1,905 genes, 3,742 reactions, and 2,766 metabolites; its active objective is `obj_biomass` on `R_biomass_reaction`. Both stoichiometric matrices are sparse; the hands-on source hash should match the model manifest. The biomass-reaction bounds are printed from the actual SBML.
+
+### Interpretation
+
+The hands-on file adds one reaction without replacing the original network. `S` has metabolites in rows and reactions in columns; its sparse entries are the stoichiometric coefficients. Reaction bounds constrain flux, and the active objective selects what the LP maximizes. The original objective is a sulfotransferase reaction, not cell growth. The 41-term biomass equation is an instructor-approved, deliberate Recon1 adaptation informed by the supplied Recon2 donor—not an unchanged donor copy or an experimentally validated growth function. See `config/biomass_donor_audit.md` for the coefficient-level audit. A manifest-matched hash verifies which source file was loaded; it does not validate the model's biology.
+
+## 2. Inspect GPR logic
+
+### Run this
+
+```{r}
+#| label: answer-inspect-gpr-logic
+gpr_ids <- c(and_only = "R_GLUCYS", or_only = "R_34DHPHAMT",
+  mixed = "R_ACACT1m", no_rule = names(hands_on$gpr)[!nzchar(hands_on$gpr)][1L])
+gpr_report <- data.frame(example = names(gpr_ids), reaction_id = unname(gpr_ids),
+  reaction_name = unname(hands_on$reaction_names[gpr_ids]),
+  gpr = unname(hands_on$gpr[gpr_ids]), stringsAsFactors = FALSE)
+gpr_report
+```
+
+### Expected result
+
+`R_GLUCYS` has an AND-only rule (`G_2729_AT1 and G_2730_AT1`); `R_34DHPHAMT` has an OR-only rule (`G_1312_AT2 or G_1312_AT1`); `R_ACACT1m` has a mixed rule (`(G_3032_AT1 and G_3030_AT1) or G_38_AT1`). The final row has an empty rule.
+
+### Interpretation
+
+AND means all listed gene products are required for that rule branch; OR means alternative gene products can support the reaction. Thus the mixed rule permits either the two-gene combination or the single-gene alternative. Empty means the model has no GPR annotation for that reaction—not zero expression, a knockout, or proof that the reaction is inactive. A GPR is a gene-to-reaction relationship, not an expression measurement or a prediction of flux. The listed EC cross-references in the student worksheet are external chemistry annotations; the local SBML does not encode them.
+
+## 3. Verify exchange signs and bounds
+
+### Run this
+
+```{r}
+#| label: answer-check-exchange-signs
+exchange_report <- do.call(rbind, lapply(c("R_EX_glc__D_e", "R_EX_lac__L_e", "R_EX_lac__D_e"), function(rid) {
+  column <- hands_on$S[, rid]
+  nz <- which(column != 0)
+  data.frame(reaction_id = rid, metabolite_id = rownames(hands_on$S)[nz],
+    coefficient = as.numeric(column[nz]), lower_bound = hands_on$lb[[rid]],
+    upper_bound = hands_on$ub[[rid]], stringsAsFactors = FALSE)
+}))
+exchange_report
+```
+
+### Expected result
+
+Each listed exchange has one extracellular metabolite with coefficient `-1`; each source bound is `[-999999, 999999]`.
+
+### Interpretation
+
+For these `-1` exchange columns and this COBRA-style convention, negative flux is uptake and positive flux is secretion. The coefficient establishes the orientation; it does not choose a direction. The source bounds allow both signs. A condition-specific medium changes those bounds. Experimental observations of L-lactate secretion can motivate a secretion-permitted scenario, but they are not automatically imposed constraints. Likewise, a zero lactate flux in one optimum does not mean secretion was blocked.
+
+## 4. Inspect the medium and reproduce the inventory calculation
+
+The experiment conditions are not matched healthy/cancer media: Keibler reports supplemented DMEM for 184A1 HMEC, while Jain reports RPMI-1640 plus glutamine and serum for the multi-lineage NCI-60 assay. MCF7 is one NCI-60 line; it is not a matched counterpart to Keibler 184A1 or GTEx breast. Complex supplements are metadata here, not guessed exchange metabolites.
+
+### Run this
+
+```{r}
+#| label: answer-load-medium-and-calculate-caps
+medium_id <- "Keibler_184A1_EV_EGF5_growth_adjusted_v2"
+keibler_medium <- read_medium("config/medium_bounds.csv", medium_id)
+keibler_medium$source
+nrow(keibler_medium$bounds)
+keibler_medium$bounds[keibler_medium$bounds$reaction_id %in%
+  c("R_EX_glc__D_e", "R_EX_gln__L_e", "R_EX_o2_e", "R_EX_lac__L_e"), ]
+
+# Rebuild the declared Trial 1 illustration from the local growth-rate records.
+growth_data <- read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_Supporting_File_2.csv",
+  stringsAsFactors = FALSE)
+growth_rows <- subset(growth_data, metabolite_or_process == "Growth Rate" &
+  condition == "EV" & dose_as_reported == 5)
+trial1_mu <- mean(growth_rows$observed_rate[growth_rows$trial == "Trial 1"])
+seed_cells <- 62500
+pre_reset_h <- 24 + 48
+flux_interval_h <- 48
+dry_mass_g_per_cell <- 333.333333 * 1e-12
+volume_L <- 2.4 / 1000
+cells_at_reset <- seed_cells * exp(trial1_mu * pre_reset_h)
+biomass_at_reset_gDW <- cells_at_reset * dry_mass_g_per_cell
+biomass_time_gDW_h <- biomass_at_reset_gDW * expm1(trial1_mu * flux_interval_h) / trial1_mu
+cap <- function(starting_mM) starting_mM * volume_L / biomass_time_gDW_h
+inventory_calculation <- data.frame(trial1_mean_rate_as_reported = trial1_mu,
+  assumed_rate_unit = "h^-1 (inferred)", cells_at_reset_estimate = cells_at_reset,
+  biomass_at_reset_gDW_estimate = biomass_at_reset_gDW,
+  glucose_inventory_mmol = 10 * volume_L, glucose_cap_mmol_gDW_h = cap(10),
+  glutamine_inventory_mmol = 4 * volume_L, glutamine_cap_mmol_gDW_h = cap(4))
+inventory_calculation
+```
+
+### Expected result
+
+The versioned medium has 42 rows. Glucose and glutamine lower bounds should be approximately $-3.76698$ and $-1.50679$ mmol/gDW/h, respectively, with upper bound zero. Every other defined component has lower bound $-C_i \times 0.3767$ mmol/gDW/h, where $C_i$ is its standard-DMEM concentration in mM (components absent from DMEM get 0), and upper bound 1000 so secretion is possible. O2, CO2, H2O, and H+ use `[-10, 1000]`. Lactate is not listed in this medium. The reconstructed Trial 1 ceilings should agree with the two nutrient lower bounds (within rounding).
+
+### Interpretation
+
+Starting concentrations and the 48 h interval give inventory rates of $10/48=0.2083$ mM/h glucose and $4/48=0.0833$ mM/h glutamine. In a 2.4 mL well, the inventories are 0.024 and 0.0096 mmol. To express a cap in the model's mmol/gDW/h units, divide inventory by biomass-time. Under exponential growth, $B(t)=B_0e^{\mu t}$ and $\int_0^T B(t)dt=B_0(e^{\mu T}-1)/\mu$; hence $q_{max}=C_0V/\int_0^T B(t)dt$. The calculation uses 62,500 seeded cells, applies the Trial 1 rate across 72 h before the final reset (24 h MCDB170 plus 48 h experimental medium), assumes 333.333 pgDW/cell, and assumes complete glucose/glutamine depletion without secretion. The growth-rate sheet does not state its unit; interpreting it as h$^{-1}$ is inferred from the study's exponential-growth formulation. These are transparent teaching assumptions, not measured reset-time biomass or exchange rates. The same inventory factor ($V/\int B\,dt$) caps every other defined DMEM component, using standard reference-formulation concentrations because the exact catalog product is unverified. The 10 mmol/gDW/h settings for O2, CO2, H2O, and H+ are declared exercise settings, not measurements. Listed exchanges other than glucose and glutamine may secrete; forbidding CO2, H2O, or H+ efflux would block respiration and lactate/H+ export. Availability permits uptake but does not force it.
+
+## 5. Run and check baseline biomass FBA
+
+### Run this
+
+```{r}
+#| label: answer-run-baseline-fba
+# Cap large finite source placeholders on a working copy for numerical handling.
+fba_model <- hands_on
+fba_model$lb <- pmax(fba_model$lb, -1000)
+fba_model$ub <- pmin(fba_model$ub, 1000)
+condition_model <- set_medium(fba_model, keibler_medium)
+fba_result <- solve_fba(condition_model)
+if (fba_result$status != "optimal") {
+  detail <- if (is.null(fba_result$error)) "no additional solver detail" else fba_result$error
+  stop(sprintf("Expected optimal FBA; status=%s; detail=%s", fba_result$status, detail))
+}
+stopifnot(fba_result$objective_value > 0, fba_result$max_abs_sv < 1e-7)
+
+fba_report <- data.frame(condition = condition_model$medium_id,
+  objective_id = fba_result$objective_id, status = fba_result$status,
+  objective_value = fba_result$objective_value,
+  glucose_exchange = fba_result$fluxes[["R_EX_glc__D_e"]],
+  glutamine_exchange = fba_result$fluxes[["R_EX_gln__L_e"]],
+  lactate_exchange = fba_result$fluxes[["R_EX_lac__L_e"]],
+  max_abs_Sv = fba_result$max_abs_sv, solver = fba_result$solver,
+  tolerance = fba_result$tolerance, model_sha256 = fba_result$model_sha256,
+  stringsAsFactors = FALSE)
+fba_report
+```
+
+### Expected result
+
+With the shared HiGHS LP adapter, status is `optimal`, the objective is about 0.4535872, and the maximum absolute $S\mathbf{v}$ residual is about $10^{-12}$. Glucose flux is about $-3.766981$ mmol/gDW/h (its full cap), glutamine is about $-1.506792$, CO2 secretion is about 31.3, oxygen uptake is at its $-10$ setting, and lactate is zero in this selected optimum. Removing glucose lowers the optimum to about 0.3678, and FVA at 100% of the optimum requires at least about 0.69 mmol/gDW/h glucose uptake while allowing 0 to about 6.55 lactate secretion.
+
+### Interpretation
+
+Optimal means the solver found an optimum for this encoded network, objective, medium, and numerical tolerance. The small residual supports steady-state balance within numerical precision. Negative glucose and glutamine fluxes denote uptake; glucose now contributes to biomass because the medium allows CO2 efflux and caps amino acids at inventory-consistent values. Lactate zero is an optimizer-selected flux, not a forced prohibition: plain FBA with sufficient oxygen oxidizes glucose rather than fermenting it, and lactate secretion appears only as an allowed alternative. Multiple flux vectors may share the same optimal biomass value. The objective is model biomass flux—not a measured proliferation rate, validation of the adapted biomass equation, or a unique intracellular state.
+
+## 6. Synthesis: from SBML to a conditional prediction
+
+### Run this
+
+```{r}
+#| label: answer-synthesis-checks
+synthesis_checks <- data.frame(stage = c("SBML provenance", "Network", "Objective",
+  "Medium", "LP result", "QC"),
+  evidence = c(paste("manifest SHA-256:", hands_on$source_sha256),
+    paste(nrow(hands_on$S), "metabolites x", ncol(hands_on$S), "reactions; sparse S"),
+    paste(hands_on$objective_sense, hands_on$objective_id, "on R_biomass_reaction"),
+    paste(keibler_medium$id, "with", nrow(keibler_medium$bounds), "explicit exchange rows"),
+    paste(fba_result$status, "objective", signif(fba_result$objective_value, 8)),
+    paste("max |S v| =", format(fba_result$max_abs_sv, scientific = TRUE))),
+  stringsAsFactors = FALSE)
+synthesis_checks
+```
+
+### Expected result
+
+The displayed chain is source-verified SBML → stoichiometric network, bounds, and active objective → versioned medium → LP optimum → numerical steady-state check.
+
+### Interpretation
+
+Separate **source facts** (SBML IDs, coefficients, bounds, manifest counts/hash, reported recipe), **calculations** (inventory and biomass-time), **assumptions** (rate extrapolation, dry mass, complete depletion, finite 10-unit capacities), and **solver results** (status, objective, flux vector, residual). The conclusion is conditional: this modeled Keibler scenario can attain the reported biomass objective under these constraints. It is not a claim that the cultured cells grew at that numerical rate, that every listed medium component is biologically available exactly as encoded, or that the optimum flux vector is unique. Exercise 1 builds one in-memory WT model scenario; expression-context models and their explicit media are the responsibility of Exercise 2.
+
+## Suggested concise answers
+
+1. $S$ stores stoichiometry; $S\mathbf{v}=0$ imposes intracellular steady state; bounds define feasible fluxes; the objective selects a mathematical optimum.
+2. The original objective is sulfotransferase activity; the hands-on active objective is the instructor-approved adapted biomass reaction.
+3. For the displayed $-1$ exchange coefficients, negative flux is uptake and positive flux secretion. Check coefficients and bounds rather than memorizing signs.
+4. Zero lactate flux in one optimum does not imply secretion is forbidden. Allowed directions come from exchange stoichiometry and bounds.
+5. Constant specific exchange flux can coexist with increasing total well uptake because whole-well rate is specific flux multiplied by biomass.
+
+FBA does not establish flux uniqueness, experimental growth, or a measured intracellular state. Flux variability analysis or related methods are needed to characterize alternative optima.

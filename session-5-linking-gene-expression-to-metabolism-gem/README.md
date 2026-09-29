@@ -4,7 +4,7 @@ This folder is the classroom distribution for the six computational precision-me
 
 ## Contents
 
-- `Task1_model_and_baseline_FBA/` through `Task6_validation/`: student worksheets only.
+- `Task1_model_and_baseline_FBA/` through `Task6_validation/`: student worksheets plus optional instructor answer QMDs. The answer keys are included for teaching staff and require the generated outputs from the sequential workflow.
 - `R/`: shared R model, medium, pathway, GPR, FBA/FVA, iMAT-like, knockout, validation, and native-screen runtime helpers.
 - `config/`: only the versioned configuration files read by the worksheets and runtime workflows, including validation settings.
 - `datasets_and_models/models/`: the original Recon1 reference and the adapted hands-on Recon1 biomass model.
@@ -12,7 +12,7 @@ This folder is the classroom distribution for the six computational precision-me
 - `scripts/export_context_sbml.py`: the narrow Exercise 2 SBML export helper. It is not a data-preprocessing script.
 - `requirements.txt`: R, Quarto, and Python package requirements.
 
-This distribution deliberately excludes instructor answer keys, handoff notes, tests, raw data, preprocessing scripts, rendered HTML/assets, and pre-existing `outputs/` directories. Outputs are created locally as students progress through the session.
+This distribution excludes handoff notes, tests, raw data, preprocessing scripts, rendered HTML/assets, and pre-existing `outputs/` directories. Outputs are created locally as students progress through the session. The included `*_answers.qmd` files are instructor materials; do not distribute them to students if answer visibility must be controlled.
 
 ## Execution order
 
@@ -44,6 +44,12 @@ For a rendered HTML worksheet, use for example:
 `quarto render Task1_model_and_baseline_FBA/Exercise1.qmd`
 
 Repeat for the other five worksheets in order. Rendering writes HTML, Quarto asset folders, figures, and analysis outputs beside the source files; these generated files are intentionally absent from this clean distribution.
+
+To render an answer key after generating the required outputs, use for example:
+
+`quarto render Task5_synthetic_lethality/Exercise5_answers.qmd`
+
+Replace `Task5` with the desired task number. Answer keys are not standalone replacements for the sequential workflow because they read generated context, QC, and analysis outputs.
 
 ## Scientific scope
 

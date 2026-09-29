@@ -1,0 +1,171 @@
+---
+title: "Exercise 5 — Restricted synthetic-lethality screen"
+subtitle: "Instructor answer key | canonical preflight and synthetic controls"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Run the independent preflight
+
+This key does not depend on the student document's environment.
+
+```{r}
+#| label: answer-setup
+root <- c(".", "..")
+root <- root[file.exists(file.path(root, "R/model_io.R"))][1]
+if (is.na(root)) stop("Open from the exercises root or this Exercise 5 folder.")
+root <- normalizePath(root)
+knitr::opts_knit$set(root.dir = root)
+setwd(root)
+source("R/model_io.R")
+source("R/ko_workflow.R")
+source("R/exercise5_workflow.R")
+exercise5 <- exercise5_write_outputs()
+preflight <- exercise5$preflight
+context_qc <- read.csv("Task5_synthetic_lethality/outputs/canonical_context_preflight.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+context_qc[, c("context", "medium_id", "wt_status", "wt_objective",
+  "wt_max_abs_sv", "source_model_sha256", "context_rds_sha256")]
+```
+
+**Expected result.** Both canonical suffixed RDS contexts pass strict reconstruction, effective-bound, objective, source/settings/input-hash, and fresh-WT checks. MCF7/RPMI proxy has WT biomass about 0.13184; GTEx/Keibler DMEM proxy has about 0.45359. Both are optimal and positive with residual below $10^{-7}$.
+
+**Interpretation.** These are context-model biomass objectives, not observed cell growth. The source profiles are unmatched and media differ; comparisons combine expression, reconstruction, and medium assumptions. XML exports and legacy unsuffixed RDS files are not substituted for the canonical post-iMAT RDS models.
+
+## Verify the Exercise 4 controls
+
+```{r}
+#| label: answer-native-census
+ko <- exercise5$preflight$native_ko
+comparison <- exercise5$preflight$native_comparison
+data.frame(rows = nrow(ko), genes = length(unique(ko$gene_id)),
+  all_optimal = all(ko$ko_status == "optimal"),
+  paired_rows = nrow(comparison),
+  native_single_selectivity_hits = sum(comparison$classification ==
+    "MCF7_lower_teaching_cutoffs"))
+```
+
+**Expected result.** There are 3,810 rows (1,905 exact Recon1 gene-product IDs in each context), 1,905 paired contrasts, all KO statuses optimal, and zero MCF7-low/GTEx-high single-gene teaching hits. The preflight checks every census row's RDS hash, model hash, settings hash, objective, medium, WT denominator, and residual against the current canonical files.
+
+**Interpretation.** This is a reproducible exploratory model census, not an instructor-reviewed dependency panel and not independent biological validation.
+
+## Exclude the hard-zero sensitivity trial
+
+```{r}
+#| label: answer-hard-zero
+exercise5$preflight$hard_zero[, c("context", "variant_wt_status",
+  "variant_wt_biomass", "variant_status")]
+```
+
+**Expected result.** Hard-zero MCF7 retains positive WT biomass; hard-zero GTEx/Keibler is optimal with biomass zero and is flagged `blocked_nonpositive_or_failed_wt`.
+
+**Interpretation.** An optimal solver status alone does not create a usable denominator. Healthy hard-zero KO/WT ratios are undefined, so this isolated trial is not an Exercise 5 default input.
+
+## Verify the synthetic GPR control
+
+The first route uses `G_A and (G_H1 or G_H2)`, the second uses `G_B`, and biomass uses essential `G_C`.
+
+![Synthetic nested-GPR network states. This is a software fixture, not a native pair or observed growth experiment.](outputs/synthetic_pair_network.png)
+
+```{r}
+#| label: answer-gpr-and-wt-restoration
+toy <- exercise5$synthetic$model
+before <- serialize(toy, NULL)
+helper_one <- knock_out_genes(toy, "G_H1")
+helper_both <- knock_out_genes(toy, c("G_H1", "G_H2"))
+pair <- knock_out_genes(toy, c("G_A", "G_B"))
+stopifnot(identical(before, serialize(toy, NULL)))
+list(one_OR_helper_deleted = helper_one$affected_reactions,
+     both_OR_helpers_deleted = helper_both$affected_reactions,
+     simultaneous_teaching_pair = pair$affected_reactions)
+```
+
+**Expected result.** Deleting one OR helper does not close `PATH_A`; deleting both helpers closes it. The simultaneous `G_A`/`G_B` call closes both alternative routes. WT serialization is unchanged.
+
+**Interpretation.** The helper evaluates the unchanged nested Boolean GPR and closes bounds on a copy. It does not mutate GPR text or infer gene absence from continuous expression.
+
+## Verify eligibility and pair status
+
+```{r}
+#| label: answer-pair-results
+rows <- read.csv("Task5_synthetic_lethality/outputs/synthetic_wt_single_pair.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+pairs <- read.csv("Task5_synthetic_lethality/outputs/synthetic_pair_classification.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+rows[, c("condition", "status", "objective_value", "max_abs_sv", "ratio_to_wt")]
+pairs[, c("pair_id", "single_a_ratio", "single_b_ratio", "pair_status",
+  "pair_ratio", "eligible_single_controls", "classification")]
+```
+
+**Expected result.** WT, `G_A`, and `G_B` objectives are 10; both single ratios are 1. The simultaneous pair is optimal with objective and ratio 0, so the synthetic positive control meets the teaching criteria. `G_C` alone has ratio 0; the pair containing it is excluded and not run.
+
+![Synthetic model biomass-objective ratios. These are fixture predictions, not observed cellular growth.](outputs/synthetic_pair_biomass.png)
+
+**Interpretation.** Individually tolerated controls distinguish joint disruption from a pair containing an already-essential gene. The cutoffs are teaching rules only.
+
+## Preserve failed states
+
+```{r}
+#| label: answer-status-aware-ratio
+forced <- toy
+forced$lb[["BIOMASS"]] <- 1
+forced_wt <- solve_fba(forced)
+forced_pair <- solve_fba(knock_out_genes(forced, c("G_A", "G_B"))$model)
+data.frame(wt_status = forced_wt$status, pair_status = forced_pair$status,
+  pair_objective = forced_pair$objective_value,
+  pair_ratio = exercise5_safe_ratio(forced_wt, forced_pair))
+```
+
+**Expected result.** Pair status is `infeasible`; objective and ratio are `NA`.
+
+**Interpretation.** Infeasibility means no feasible solution under those constraints. It is not an optimal zero. `time_limit`, `error`, missing, and residual-QC failures are handled the same way: retained and unclassified, never replaced by zero.
+
+## Restricted native screen
+
+```{r}
+#| label: answer-native-panel-gate
+status <- read.csv("Task5_synthetic_lethality/outputs/native_pair_panel_status.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+audit <- read.csv("Task5_synthetic_lethality/outputs/native_pair_panel_audit.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+native_live <- exercise5_run_native_panel(preflight)
+native <- native_live$results
+contrasts <- native_live$contrast
+status
+audit[audit$selection_rank <= 10,
+  c("selection_rank", "gene_a", "gene_b", "shared_or_reaction_count",
+    "selected", "exclusion_reason")]
+table(contrasts$scenario_conditional_classification)
+ordered <- contrasts[order(contrasts$mcf7_pair_ratio, contrasts$gtex_pair_ratio), ]
+head(ordered[, c("gene_a", "gene_b", "mcf7_pair_status", "mcf7_pair_ratio",
+  "gtex_pair_status", "gtex_pair_ratio", "scenario_conditional_classification")], 15)
+stopifnot(nrow(native) == 340L, nrow(contrasts) == 170L)
+plot(seq_len(nrow(ordered)), ordered$mcf7_pair_ratio, pch = 16,
+  col = "firebrick", ylim = c(0, 1.05),
+  xlab = "Pairs ordered by MCF7 ratio", ylab = "Pair biomass / context WT")
+points(seq_len(nrow(ordered)), ordered$gtex_pair_ratio,
+  pch = 1, col = "seagreen4")
+abline(h = c(0.10, 0.50), lty = 2)
+legend("bottomright", c("MCF7 + RPMI proxy", "GTEx/Keibler + DMEM proxy"),
+  pch = c(16, 1), col = c("firebrick", "seagreen4"), bty = "n")
+```
+
+**Expected result.** The audit contains 170 exact two-gene pure-OR pairs whose MCF7 singles both retain at least 0.50. All are selected for live execution. All 340 context/pair solves are optimal and residual-valid. Seven pairs have MCF7 ratio `<0.10`; all seven also have GTEx/Keibler ratio `<0.50`, so they are classified `MCF7_low_not_GTEx_retained`. The remaining 163 are `tested_not_hit`.
+
+**Interpretation.** The rule is reproducible and independent of pair outcomes: exclude invalid/low MCF7 singles and require exact two-gene pure-OR GPR topology. Seven pairs are joint growth dependencies in both saved scenarios, not healthy-retained candidates. This is an exploratory scenario result, not a reviewed biological panel, exhaustive screen, guaranteed tumor-selective hit or clinical candidate.
+
+## Discussion answers
+
+1. Both MCF7 singles must be optimal, QC-valid, and $r\geq0.50$ so the pair effect is not merely inherited from one already-essential gene.
+2. One `knock_out_genes(model, c(a, b))` call on unchanged WT directly represents simultaneous loss and prevents state leakage. The helper evaluates immutable GPR text; expression is not binary deletion evidence.
+3. Optimal zero is a feasible optimized result and may yield ratio zero against a positive WT. Infeasible has no objective value, so its ratio is undefined.
+4. Optional GTEx survival describes behavior in a second saved scenario. It is not proof of tumor specificity because GTEx/Keibler and MCF7 are unmatched and use different medium proxies.
+5. The seven MCF7-low pairs also fail the healthy-retained criterion because their GTEx/Keibler ratios are below 0.50. The 170 pairs are only the exact pure-OR GPR subset of roughly 1.81 million possible pairs, and remain computational rather than biologically reviewed.
