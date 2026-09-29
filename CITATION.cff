@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use these teaching materials, please cite the repository and the underlying source datasets and models listed in THIRD_PARTY_NOTICES.md."
+title: "Computational Precision Medicine: Linking Gene Expression to Metabolism"
+type: educational
+abstract: "Teaching materials for an R-based genome-scale metabolic modeling session."
+repository-code: "https://github.com/marindemaslab/computational-precision-medicine"
+license: MIT
+authors:
+  - name: "Marindemas Lab"
