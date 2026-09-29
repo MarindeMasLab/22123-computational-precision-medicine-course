@@ -22,8 +22,13 @@ Assess an expression-only reconstruction against independent Jain exchange direc
 Run this from the `exercises/` directory. The workflow rejects unsuffixed or provenance-mismatched contexts and checks that the canonical MCF7 and GTEx WT solves are optimal, positive, and residual-valid.
 
 ```{r}
-source("R/exercise6_workflow.R")
-result <- exercise6_run("..")
+root <- c(".", "..")
+root <- root[file.exists(file.path(root, "R/model_io.R"))][1]
+if (is.na(root)) stop("Open from the session root or this Task 6 folder.")
+root <- normalizePath(root)
+setwd(root)
+source(file.path(root, "R/exercise6_workflow.R"))
+result <- exercise6_run(root)
 result$preflight$preflight
 ```
 
