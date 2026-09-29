@@ -1,0 +1,7 @@
+version: exercise6-direction-v1
+observation_unit: fmol/cell/h
+model_unit: mmol/gDW/h
+observation_zero_tolerance: 0.000000000001
+model_zero_tolerance: 0.0000001
+replicate_policy: all_replicates_same_nonzero_sign_else_near_zero_or_ambiguous
+seed: 20260928

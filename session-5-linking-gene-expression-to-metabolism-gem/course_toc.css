@@ -1,0 +1,6 @@
+/* Quarto emits the right-hand TOC list with class="collapse" before its
+   JavaScript expands it. Keep heading links visible in local-file browsers
+   and previews where the enhancement script does not run. */
+#TOC ul.collapse {
+  display: block !important;
+}

@@ -1,0 +1,47 @@
+exchange_reaction_id,metabolite,observations,uptake_observations,secretion_observations,zero_observations,direction_across_NCI60_observations,calibrated_fmol_per_cell_per_h,arbitrary_unit_observations
+EX_4abut_e,GABA,120,1,119,0,both uptake and secretion,120,0
+EX_4pyrdx_e,4-pyridoxate,120,35,85,0,both uptake and secretion,120,0
+EX_acac_e,acetoacetate,120,23,97,0,both uptake and secretion,120,0
+EX_ade_e,adenine,120,54,66,0,both uptake and secretion,120,0
+EX_adn_e,adenosine,120,0,68,52,secretion with 52 zero records,120,0
+EX_akg_e,alpha-ketoglutarate,120,6,114,0,both uptake and secretion,120,0
+EX_ala__L_e,alanine,120,4,116,0,both uptake and secretion,120,0
+EX_arg__L_e,arginine,120,111,9,0,both uptake and secretion,120,0
+EX_ascb__L_e,ascorbate,120,23,97,0,both uptake and secretion,0,120
+EX_asn__L_e,asparagine,120,109,11,0,both uptake and secretion,120,0
+EX_asp__L_e,aspartate,120,94,26,0,both uptake and secretion,120,0
+EX_btn_e,biotin,120,97,23,0,both uptake and secretion,0,120
+EX_cit_e,citrate,120,4,116,0,both uptake and secretion,120,0
+EX_crn_e,carnitine,120,101,19,0,both uptake and secretion,120,0
+EX_cytd_e,cytidine,120,105,15,0,both uptake and secretion,120,0
+EX_fol_e,folate,120,66,54,0,both uptake and secretion,120,0
+EX_gchola_e,glycocholate,120,95,25,0,both uptake and secretion,120,0
+EX_glc__D_e,glucose,120,120,0,0,uptake only,120,0
+EX_gln__L_e,glutamine,120,120,0,0,uptake only,120,0
+EX_glu__L_e,glutamate,120,12,108,0,both uptake and secretion,120,0
+EX_gly_e,glycine,120,51,69,0,both uptake and secretion,120,0
+EX_hom__L_e,homoserine,120,120,0,0,uptake only,120,0
+EX_hxan_e,hypoxanthine,120,118,2,0,both uptake and secretion,120,0
+EX_ile__L_e,isoleucine,120,120,0,0,uptake only,120,0
+EX_ins_e,inosine,120,33,87,0,both uptake and secretion,120,0
+EX_lac__L_e,lactate,120,0,120,0,secretion only,120,0
+EX_leu__L_e,leucine,120,120,0,0,uptake only,120,0
+EX_lys__L_e,lysine,120,120,0,0,uptake only,120,0
+EX_met__L_e,methionine,120,120,0,0,uptake only,120,0
+EX_orn_e,ornithine,120,62,58,0,both uptake and secretion,120,0
+EX_oxa_e,oxalate,120,108,12,0,both uptake and secretion,120,0
+EX_phe__L_e,phenylalanine,120,120,0,0,uptake only,120,0
+EX_ppa_e,propionate,120,40,80,0,both uptake and secretion,120,0
+EX_pro__L_e,proline,120,27,93,0,both uptake and secretion,120,0
+EX_pyr_e,pyruvate,120,0,120,0,secretion only,0,120
+EX_ser__L_e,serine,120,120,0,0,uptake only,120,0
+EX_srtn_e,serotonin,120,35,85,0,both uptake and secretion,120,0
+EX_succ_e,succinate,120,13,107,0,both uptake and secretion,120,0
+EX_thr__L_e,threonine,120,120,0,0,uptake only,120,0
+EX_thyox__L_e,thyroxine,120,53,67,0,both uptake and secretion,120,0
+EX_triodthy_e,triiodothyronine,120,76,44,0,both uptake and secretion,120,0
+EX_trp__L_e,tryptophan,120,120,0,0,uptake only,120,0
+EX_tyr__L_e,tyrosine,120,120,0,0,uptake only,120,0
+EX_ura_e,uracil,120,44,76,0,both uptake and secretion,120,0
+EX_uri_e,uridine,120,83,37,0,both uptake and secretion,120,0
+EX_val__L_e,valine,120,120,0,0,uptake only,120,0

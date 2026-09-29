@@ -1,0 +1,77 @@
+formulation_id,reaction_id,component,concentration_mM,derivation,note
+Keibler2021_184A1_DMEM,R_EX_glc__D_e,D-glucose,10,Keibler et al. 2021 reported,
+Keibler2021_184A1_DMEM,R_EX_gln__L_e,L-glutamine,4,Keibler et al. 2021 reported,
+Keibler2021_184A1_DMEM,R_EX_arg__L_e,L-arginine,0.3987,L-Arg HCl 84 mg/L / 210.66,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_cysi__L_e,L-cystine,0.2011,L-cystine 2HCl 63 mg/L / 313.2,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_gly_e,glycine,0.3996,30 mg/L / 75.07,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_his__L_e,L-histidine,0.2004,L-His HCl H2O 42 mg/L / 209.63,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_ile__L_e,L-isoleucine,0.8005,105 mg/L / 131.17,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_leu__L_e,L-leucine,0.8005,105 mg/L / 131.17,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_lys__L_e,L-lysine,0.7993,L-Lys HCl 146 mg/L / 182.65,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_met__L_e,L-methionine,0.2011,30 mg/L / 149.21,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_phe__L_e,L-phenylalanine,0.3995,66 mg/L / 165.19,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_ser__L_e,L-serine,0.3997,42 mg/L / 105.09,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_thr__L_e,L-threonine,0.7975,95 mg/L / 119.12,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_trp__L_e,L-tryptophan,0.07834,16 mg/L / 204.23,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_tyr__L_e,L-tyrosine,0.3982,L-Tyr 2Na 2H2O 104 mg/L / 261.19,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_val__L_e,L-valine,0.8024,94 mg/L / 117.15,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_asn__L_e,L-asparagine,0,absent from standard DMEM,uptake closed; secretion allowed
+Keibler2021_184A1_DMEM,R_EX_asp__L_e,L-aspartate,0,absent from standard DMEM,uptake closed; secretion allowed
+Keibler2021_184A1_DMEM,R_EX_glu__L_e,L-glutamate,0,absent from standard DMEM,uptake closed; secretion allowed
+Keibler2021_184A1_DMEM,R_EX_pro__L_e,L-proline,0,absent from standard DMEM,uptake closed; secretion allowed
+Keibler2021_184A1_DMEM,R_EX_btn_e,biotin,0,absent from standard DMEM,uptake closed; secretion allowed
+Keibler2021_184A1_DMEM,R_EX_chol_e,choline,0.02865,choline chloride 4 mg/L / 139.62,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_fol_e,folate,0.009062,folic acid 4 mg/L / 441.4,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_inost_e,myo-inositol,0.03996,7.2 mg/L / 180.16,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_pnto__R_e,pantothenate,0.01679,D-Ca pantothenate 4 mg/L / 476.54 x 2,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_pydx_e,vitamin B6,0.01964,pyridoxal HCl 4 mg/L / 203.62,vitamer mapped to pyridoxal exchange as in Exercise 1
+Keibler2021_184A1_DMEM,R_EX_ribflv_e,riboflavin,0.001063,0.4 mg/L / 376.36,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_thm_e,thiamine,0.01186,thiamine HCl 4 mg/L / 337.27,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_na1_e,sodium,154.5,NaCl 109.5 + NaHCO3 44.04 + NaH2PO4 0.906 mM,major salts only
+Keibler2021_184A1_DMEM,R_EX_k_e,potassium,5.366,KCl 400 mg/L / 74.55,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_cl_e,chloride,118.5,NaCl 109.5 + KCl 5.366 + 2 x CaCl2 1.802 mM,major salts only
+Keibler2021_184A1_DMEM,R_EX_ca2_e,calcium,1.802,CaCl2 200 mg/L / 110.98,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_pi_e,phosphate,0.9059,NaH2PO4 H2O 125 mg/L / 137.99,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_so4_e,sulfate,0.8114,MgSO4 97.67 mg/L / 120.37,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_fe3_e,iron(III),0.0002475,Fe(NO3)3 9H2O 0.1 mg/L / 404.0,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_fe2_e,iron(II),0,no ferrous salt in standard DMEM,uptake closed; secretion allowed
+Keibler2021_184A1_DMEM,R_EX_hco3_e,bicarbonate,44.04,NaHCO3 3700 mg/L / 84.01,standard DMEM formulation; catalog not verified
+Keibler2021_184A1_DMEM,R_EX_nh4_e,ammonium,0,no ammonium salt in standard DMEM,uptake closed; secretion allowed
+Jain2012_NCI60_RPMI,R_EX_glc__D_e,D-glucose,11.1,2000 mg/L / 180.16,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_gln__L_e,L-glutamine,2,Jain et al. 2012 reported,
+Jain2012_NCI60_RPMI,R_EX_arg__L_e,L-arginine,1.148,200 mg/L / 174.2,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_asn__L_e,L-asparagine,0.3784,50 mg/L / 132.12,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_asp__L_e,L-aspartate,0.1503,20 mg/L / 133.1,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_cysi__L_e,L-cystine,0.2075,L-cystine 2HCl 65 mg/L / 313.2,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_glu__L_e,L-glutamate,0.1359,20 mg/L / 147.13,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_gly_e,glycine,0.1332,10 mg/L / 75.07,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_his__L_e,L-histidine,0.09667,15 mg/L / 155.16,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_ile__L_e,L-isoleucine,0.3812,50 mg/L / 131.17,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_leu__L_e,L-leucine,0.3812,50 mg/L / 131.17,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_lys__L_e,L-lysine,0.219,L-Lys HCl 40 mg/L / 182.65,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_met__L_e,L-methionine,0.1005,15 mg/L / 149.21,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_phe__L_e,L-phenylalanine,0.09081,15 mg/L / 165.19,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_pro__L_e,L-proline,0.1737,20 mg/L / 115.13,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_ser__L_e,L-serine,0.2855,30 mg/L / 105.09,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_thr__L_e,L-threonine,0.1679,20 mg/L / 119.12,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_trp__L_e,L-tryptophan,0.02448,5 mg/L / 204.23,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_tyr__L_e,L-tyrosine,0.111,L-Tyr 2Na 2H2O 29 mg/L / 261.19,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_val__L_e,L-valine,0.1707,20 mg/L / 117.15,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_btn_e,biotin,0.0008186,0.2 mg/L / 244.31,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_chol_e,choline,0.02149,choline chloride 3 mg/L / 139.62,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_fol_e,folate,0.002266,folic acid 1 mg/L / 441.4,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_inost_e,myo-inositol,0.1943,35 mg/L / 180.16,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_pnto__R_e,pantothenate,0.001049,D-Ca pantothenate 0.25 mg/L / 476.54 x 2,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_pydx_e,vitamin B6,0.004863,pyridoxine HCl 1 mg/L / 205.64,vitamer mapped to pyridoxal exchange as in Exercise 1
+Jain2012_NCI60_RPMI,R_EX_ribflv_e,riboflavin,0.0005314,0.2 mg/L / 376.36,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_thm_e,thiamine,0.002965,thiamine HCl 1 mg/L / 337.27,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_na1_e,sodium,137.8,NaCl 102.7 + NaHCO3 23.81 + 2 x Na2HPO4 5.635 mM,major salts only
+Jain2012_NCI60_RPMI,R_EX_k_e,potassium,5.366,KCl 400 mg/L / 74.55,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_cl_e,chloride,108,NaCl 102.7 + KCl 5.366 mM,major salts only
+Jain2012_NCI60_RPMI,R_EX_ca2_e,calcium,0.4235,Ca(NO3)2 4H2O 100 mg/L / 236.15,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_pi_e,phosphate,5.635,Na2HPO4 800 mg/L / 141.96,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_so4_e,sulfate,0.4058,MgSO4 48.84 mg/L / 120.37,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_fe3_e,iron(III),0,no iron salt in standard RPMI-1640,uptake closed; FBS iron not represented
+Jain2012_NCI60_RPMI,R_EX_fe2_e,iron(II),0,no iron salt in standard RPMI-1640,uptake closed; FBS iron not represented
+Jain2012_NCI60_RPMI,R_EX_hco3_e,bicarbonate,23.81,NaHCO3 2000 mg/L / 84.01,standard RPMI-1640 formulation; Jain catalog not verified
+Jain2012_NCI60_RPMI,R_EX_nh4_e,ammonium,0,no ammonium salt in standard RPMI-1640,uptake closed; secretion allowed

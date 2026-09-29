@@ -1,0 +1,43 @@
+# Session 5 Computational Precision Medicine exercises
+#
+# This is an R/Quarto dependency manifest. It is intentionally named
+# requirements.txt for discoverability; it is not a pip requirements file.
+# Install the runtimes separately, then install the CRAN packages below.
+# All six exercises and the shared tests use the configured HiGHS backend.
+
+# Required runtimes
+R >= 4.2.0
+Quarto >= 1.4.0
+Python >= 3.9
+
+# Required CRAN packages
+xml2
+Matrix
+digest
+highs
+ggplot2
+knitr
+
+# Supplied with base R; listed for clarity, not for separate installation:
+# graphics
+# grDevices
+# methods
+# parallel
+# stats
+# tools
+# utils
+
+# Not required by the configured workflow:
+# lpSolve - retained only as a guarded legacy fallback; HiGHS is required.
+# Other Python upstream preparation scripts are not part of student execution.
+# MATLAB, Java, COBRApy, sybil, sybilSBML, or reticulate.
+
+# Example installation from an R session:
+# install.packages(c("xml2", "Matrix", "digest", "highs", "ggplot2", "knitr"))
+# quarto check
+
+# Required when rendering Exercise 2 from its QMD source. The script exports
+# effective exchange bounds into scenario SBML files after the R workflow.
+# Install with: python3 -m pip install cobra pandas
+cobra
+pandas

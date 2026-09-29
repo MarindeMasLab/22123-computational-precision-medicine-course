@@ -1,0 +1,200 @@
+---
+title: "Exercise 5 — Restricted synthetic-lethality screen"
+subtitle: "Student worksheet | 25 minutes | executable controls and honest native gate"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Learning goals
+
+Distinguish individually tolerated single-gene deletions from a jointly growth-disrupting double deletion. Start every deletion from unchanged WT, retain solver/QC states, and separate a synthetic software control from an exploratory native model prediction.
+
+For genes $a$ and $b$, the teaching eligibility rule is
+
+$$r_{a,\mathrm{MCF7}}\geq0.50,\qquad r_{b,\mathrm{MCF7}}\geq0.50,$$
+
+followed by one simultaneous deletion from WT and
+
+$$r_{ab,\mathrm{MCF7}}<0.10.$$
+
+Optional GTEx/Keibler survival uses $r_{ab,\mathrm{GTEx}}\geq0.50$. These are classroom cutoffs, not clinically validated criteria.
+
+> **Current scope.** Canonical post-iMAT contexts and the exploratory Exercise 4 single-KO census exist. No instructor-reviewed biological panel exists. Students run all 170 exact pure-OR pairs passing the MCF7 single-control gate in both contexts. No native solution checkpoint is distributed.
+
+## 1. Verify the current inputs
+
+The strict preflight loads only the canonical suffixed RDS objects, never legacy unsuffixed files or XML exports in place of the post-iMAT models. It verifies reconstruction QC, effective exchange bounds, model/settings/input hashes, objective, solver states, positive context-specific WT biomass, and all 3,810 Exercise 4 census rows.
+
+```{r}
+#| label: exercise5-setup
+root <- c(".", "..")
+root <- root[file.exists(file.path(root, "R/model_io.R"))][1]
+if (is.na(root)) stop("Open from the exercises root or this Exercise 5 folder.")
+root <- normalizePath(root)
+knitr::opts_knit$set(root.dir = root)
+setwd(root)
+source("R/model_io.R")
+source("R/ko_workflow.R")
+source("R/exercise5_workflow.R")
+exercise5 <- exercise5_write_outputs()
+preflight <- exercise5$preflight
+context_qc <- read.csv("Exercise5_synthetic_lethality/outputs/canonical_context_preflight.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+context_qc[, c("context", "medium_id", "objective_id", "wt_status", "wt_objective",
+  "wt_max_abs_sv", "source_model_sha256", "context_rds_sha256")]
+```
+
+Both contexts use `obj_biomass` and the current corrected source hash, but their media differ. MCF7 combines DepMap expression with an RPMI recipe proxy; GTEx breast combines tissue expression with the Keibler/DMEM proxy. These are unmatched source profiles. Their contrast combines expression, reconstruction, and medium assumptions; it does not isolate a tumor-specific effect.
+
+Check the Exercise 4 inputs rather than assuming a curated panel exists:
+
+```{r}
+#| label: inspect-native-single-census
+native_ko <- exercise5$preflight$native_ko
+native_comparison <- exercise5$preflight$native_comparison
+data.frame(
+  native_single_rows = nrow(native_ko),
+  genes_per_context = length(unique(native_ko$gene_id)),
+  all_ko_statuses_optimal = all(native_ko$ko_status == "optimal"),
+  paired_rows = nrow(native_comparison),
+  MCF7_low_GTEx_high_single_hits = sum(native_comparison$classification ==
+    "MCF7_lower_teaching_cutoffs")
+)
+```
+
+The census is reproducible exploratory *in silico* output, not an instructor-reviewed biological dependency panel. Its ratios are model biomass predictions, not observed cell-growth measurements.
+
+The isolated hard-zero sensitivity trial is an instructor-only development analysis and is not distributed:
+
+```{r}
+#| label: inspect-hard-zero-gate
+exercise5$preflight$hard_zero[, c("context", "original_wt_biomass",
+  "variant_wt_status", "variant_wt_biomass", "variant_status")]
+```
+
+The student bundle reports this gate as `not_distributed`; no hard-zero result is used by the default pair screen. The instructor development result showed that a healthy KO/WT ratio would have a zero denominator and be undefined.
+
+## 2. Synthetic pair control
+
+The fixture has two alternative routes. `PATH_A` requires `G_A` and either helper `G_H1` or `G_H2`; `PATH_B` requires `G_B`. `G_C` is required for biomass. This nested AND/OR rule makes clear that deletion is evaluated through unchanged GPRs; continuous expression is never converted into binary absence.
+
+![Synthetic two-route fixture. Green routes remain available; red X marks reactions closed by the indicated deletion. This is a software control, not a native model or biological observation.](outputs/synthetic_pair_network.png)
+
+Each call starts from the same unchanged WT. The pair is one call:
+
+```{r}
+#| label: inspect-simultaneous-deletion
+toy <- exercise5$synthetic$model
+wt_serialized <- serialize(toy, NULL)
+single_a <- knock_out_genes(toy, "G_A")
+single_b <- knock_out_genes(toy, "G_B")
+pair_ab <- knock_out_genes(toy, c("G_A", "G_B"))
+stopifnot(identical(wt_serialized, serialize(toy, NULL)))
+list(single_A = single_a$affected_reactions,
+     single_B = single_b$affected_reactions,
+     simultaneous_pair = pair_ab$affected_reactions)
+```
+
+## 3. Single controls before the pair
+
+The persisted WT/single/pair table retains objective values, residuals, ratios, statuses, and exact fixture provenance.
+
+```{r}
+#| label: synthetic-wt-single-pair-table
+synthetic_rows <- read.csv(
+  "Exercise5_synthetic_lethality/outputs/synthetic_wt_single_pair.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+synthetic_rows[, c("condition", "deleted_genes", "affected_reactions", "status",
+  "objective_value", "max_abs_sv", "ratio_to_wt", "objective_id", "medium_id",
+  "model_sha256")]
+```
+
+`G_A` and `G_B` are individually tolerated ($r=1$). The negative-control single `G_C` is already essential ($r=0$), so any pair containing it is excluded before a pair LP is run.
+
+## 4. Simultaneous pair and classification
+
+```{r}
+#| label: synthetic-pair-classification
+synthetic_pairs <- read.csv(
+  "Exercise5_synthetic_lethality/outputs/synthetic_pair_classification.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+synthetic_pairs[, c("pair_id", "gene_a", "gene_b", "single_a_status",
+  "single_a_ratio", "single_b_status", "single_b_ratio", "pair_status",
+  "pair_ratio", "eligible_single_controls", "classification")]
+```
+
+![Biomass-objective ratios for the synthetic WT, both individually tolerated single deletions, and their simultaneous deletion. These values are generated model-fixture outputs, not observed growth.](outputs/synthetic_pair_biomass.png)
+
+Only an optimal KO solve with residual within tolerance and an optimal, positive WT denominator receives a numeric ratio. `infeasible`, `time_limit`, `error`, missing, and QC-failed states stay unclassified with `NA`; none is replaced by zero.
+
+```{r}
+#| label: optimal-zero-versus-infeasible
+forced <- toy
+forced$lb[["BIOMASS"]] <- 1
+forced_wt <- solve_fba(forced)
+forced_pair <- solve_fba(knock_out_genes(forced, c("G_A", "G_B"))$model)
+data.frame(case = c("optimal zero in ordinary fixture", "forced-growth infeasible"),
+  status = c(synthetic_rows$status[synthetic_rows$condition == "pair_G_A_G_B"],
+    forced_pair$status),
+  objective = c(synthetic_rows$objective_value[synthetic_rows$condition == "pair_G_A_G_B"],
+    forced_pair$objective_value),
+  ratio = c(synthetic_rows$ratio_to_wt[synthetic_rows$condition == "pair_G_A_G_B"],
+    exercise5_safe_ratio(forced_wt, forced_pair)))
+```
+
+## 5. Restricted native pair screen
+
+The predeclared rule excludes MCF7 single KOs with invalid results or $r<0.50$ and retains every exact two-gene **pure-OR** Recon1 GPR pair. This produces 170 pairs without using pair biomass outcomes. Run all 340 context/pair LPs. On the tested machine this takes about 20 seconds.
+
+```{r}
+#| label: native-pair-panel-gate
+#| output: false
+native_panel_status <- read.csv(
+  "Exercise5_synthetic_lethality/outputs/native_pair_panel_status.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+native_audit <- read.csv(
+  "Exercise5_synthetic_lethality/outputs/native_pair_panel_audit.csv",
+  stringsAsFactors = FALSE, check.names = FALSE)
+native_panel_status
+native_audit[native_audit$selection_rank <= 10,
+  c("selection_rank", "gene_a", "gene_b", "shared_or_reaction_count",
+    "selected", "exclusion_reason")]
+native_live <- exercise5_run_native_panel(preflight)
+native_results <- native_live$results
+native_contrasts <- native_live$contrast
+stopifnot(nrow(native_results) == 340L, nrow(native_contrasts) == 170L)
+table(native_contrasts$scenario_conditional_classification)
+ordered <- native_contrasts[order(native_contrasts$mcf7_pair_ratio,
+  native_contrasts$gtex_pair_ratio), ]
+head(ordered[, c("gene_a", "gene_b", "mcf7_single_a_ratio",
+  "mcf7_single_b_ratio", "mcf7_pair_status", "mcf7_pair_ratio",
+  "gtex_pair_status", "gtex_pair_ratio", "scenario_conditional_classification")], 15)
+plot(seq_len(nrow(ordered)), ordered$mcf7_pair_ratio, pch = 16,
+  col = "firebrick", ylim = c(0, 1.05),
+  xlab = "Pairs ordered by MCF7 ratio", ylab = "Pair biomass / context WT")
+points(seq_len(nrow(ordered)), ordered$gtex_pair_ratio,
+  pch = 1, col = "seagreen4")
+abline(h = c(0.10, 0.50), lty = 2)
+legend("bottomright", c("MCF7 + RPMI proxy", "GTEx/Keibler + DMEM proxy"),
+  pch = c(16, 1), col = c("firebrick", "seagreen4"), bty = "n")
+```
+
+Your in-memory `native_results` table retains all 340 pair solves with single and pair statuses, objectives, residuals, affected reactions, ratios, WT denominators, objective, medium and hashes. Use `native_contrasts` to count MCF7-low pairs, test the optional healthy-retained criterion, and explain whether any result is scenario-selective. The rendered student HTML intentionally suppresses these outputs; generate and interpret them yourself.
+
+The GTEx comparison is **scenario-conditional**, not tumor-selective validation, because the media differ and the profiles are unmatched. The full audit CSV retains all 170 eligible pure-OR pairs and their GPR-supported reactions.
+
+## Questions
+
+1. Why must both cancer single deletions be interpretable and retain $r\geq0.50$ before the pair is eligible?
+2. Why call `knock_out_genes(model, c(gene_a, gene_b))` once on WT rather than mutate GPR text or reuse a single-KO model?
+3. Why are optimal zero and infeasible different outcomes?
+4. What does optional GTEx pair survival add, and why is it not proof of tumor specificity here?
+5. How many pairs meet the MCF7-low cutoff, how many also retain GTEx/Keibler growth, and why does this 170-pair result not represent an exhaustive Recon1 screen?

@@ -1,0 +1,61 @@
+jain_cell_line,depmap_sample_id,depmap_candidate_ids,mapping_status,mapping_source
+UACC-257,,ACH_000579,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+OVCAR-8,ACH_000696,ACH_000696,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+OVCAR-5,,ACH_001151,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+SF-295,ACH_000376,ACH_000376,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+A549/ATCC,ACH_000681,ACH_000681,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+RXF 393,,ACH_002195,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+CAKI-1,ACH_000433,ACH_000433,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+MDA-MB-435,,,unmatched,Cellosaurus API exact identifier/synonym match
+EKVX,ACH_000706,ACH_000706,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+NCI-H23,ACH_000900,ACH_000900,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+HCC-2998,,ACH_001081,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+NCI/ADR-RES,,,unmatched,Cellosaurus API exact identifier/synonym match
+HT29,ACH_000552,ACH_000552,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+M14,,ACH_002159,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+HCT-116,,ACH_000971,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+HOP-62,ACH_000861,ACH_000861,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+786-O,ACH_000649,ACH_000649,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+NCI-H322M,,ACH_002172,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+BT-549,ACH_000288,ACH_000288,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+MALME-3M,ACH_000477,ACH_000477,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+TK-10,,ACH_001208,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+UO-31,ACH_000428,ACH_000428;ACH_002203,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+T-47D,,ACH_000147,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+MCF7,ACH_000019,ACH_000019,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+NCI-H460,ACH_000463,ACH_000463,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SK-OV-3,ACH_000811,ACH_000811,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SK-MEL-5,,ACH_000730,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+SNB-19,,ACH_001198,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+SF-539,ACH_000273,ACH_000273,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+COLO 205,,ACH_001039,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+KM12,ACH_000969,ACH_000969,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+OVCAR-3,,ACH_000001,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+SF-268,ACH_000655,ACH_000655,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+DU-145,,ACH_000979,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+HS 578T,ACH_000148,ACH_000148,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SW620,ACH_000651,ACH_000651,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SK-MEL-28,,ACH_000615,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+A498,,ACH_000555,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+IGROV1,,ACH_000966,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+MOLT-4,,ACH_001127,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+K562,,ACH_000551,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+HOP-92,ACH_000825,ACH_000825,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+PC-3,,ACH_000090;ACH_002184,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+HL-60(TB),,,unmatched,Cellosaurus API exact identifier/synonym match
+MDA-MB-468,ACH_000849,ACH_000849,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SK-MEL-2,ACH_001190,ACH_001190,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+NCI-H522,,ACH_000343,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+HCT-15,,ACH_000997,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+ACHN,,ACH_000046,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+U251,ACH_000232,ACH_000232,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+LOX IMVI,,ACH_000750,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+SNB-75,ACH_000504,ACH_000504,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+OVCAR-4,,ACH_000617,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+NCI-H226,ACH_000367,ACH_000367,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+UACC-62,ACH_000425,ACH_000425,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SN12C,,ACH_002199,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+MDA-MB-231/ATCC,ACH_000768,ACH_000768,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+CCRF-CEM,,ACH_001738,not in supplied DepMap matrix,Cellosaurus API exact identifier/synonym match
+RPMI 8226,ACH_000817,ACH_000817,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix
+SR,ACH_000338,ACH_000338;ACH_001665,matched,Cellosaurus exact match; unique ID present in supplied DepMap matrix

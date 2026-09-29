@@ -1,0 +1,19 @@
+exchange_reaction_id,metabolite,observations,uptake_observations,secretion_observations,zero_observations,direction_across_assayed_conditions,unit_note
+EX_ala__L_e,Alanine,50,0,50,0,secretion only,Keibler workbook does not state rate unit
+EX_asp__L_e,Aspartate,50,11,39,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_glc__D_e,Glucose,50,50,0,0,uptake only,Keibler workbook does not state rate unit
+EX_gln__L_e,Glutamine,50,50,0,0,uptake only,Keibler workbook does not state rate unit
+EX_glu__L_e,Glutamate,50,12,38,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_gly_e,Glycine,50,34,16,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_ile__L_e,Isoleucine,50,50,0,0,uptake only,Keibler workbook does not state rate unit
+EX_lac__L_e,Lactate,50,0,50,0,secretion only,Keibler workbook does not state rate unit
+EX_leu__L_e,Leucine,50,50,0,0,uptake only,Keibler workbook does not state rate unit
+EX_lys__L_e,Lysine,50,41,9,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_met__L_e,Methionine,50,46,4,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_phe__L_e,Phenylalanine,50,46,4,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_pro__L_e,Proline,50,0,50,0,secretion only,Keibler workbook does not state rate unit
+EX_pyr_e,Pyruvate,50,0,50,0,secretion only,Keibler workbook does not state rate unit
+EX_ser__L_e,Serine,50,50,0,0,uptake only,Keibler workbook does not state rate unit
+EX_thr__L_e,Threonine,50,49,1,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_tyr__L_e,Tyrosine,50,48,2,0,both uptake and secretion across conditions,Keibler workbook does not state rate unit
+EX_val__L_e,Valine,50,50,0,0,uptake only,Keibler workbook does not state rate unit

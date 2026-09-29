@@ -1,0 +1,522 @@
+---
+title: "Exercise 2 — Gene expression to context-specific models"
+subtitle: "Student worksheet | 40 minutes | expression evidence and context-model handoff"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Learning goals
+
+By the end, distinguish (1) measured/source expression, (2) discretized **gene-product evidence**, (3) reaction evidence evaluated through a gene–protein–reaction (GPR) rule, and (4) an optimized context-specific model. The worksheet evaluates the supplied evidence and synthetic GPR fixtures, then runs the configured context optimization and reports model QC.
+
+> **Comparison interpretation.** MCF7 and the archived GTEx breast tissue profile are not matched biological samples. Each profile is modeled under a source-specific recipe scenario (Jain NCI-60 RPMI versus Keibler 184A1 supplemented DMEM). Differences therefore combine expression and medium assumptions; they do not isolate expression effects. Gene evidence by itself is not a reconstructed model.
+
+## 1. Load aligned profiles and verify identity
+
+Open R with the `exercises/` folder as the working directory (or open the worksheet in its own folder). The supplied matrices share the two leading identifier columns: Recon1 gene-product ID and gene symbol.
+
+```{r}
+#| label: load-expression-profiles
+project_root <- c(".", "..")
+project_root <- project_root[file.exists(file.path(project_root, "R/model_io.R"))][1]
+if (is.na(project_root)) stop("Open from the exercises root or this Exercise 2 folder.")
+setwd(project_root)
+
+cancer_expression <- read.csv(
+  "datasets_and_models/treated/cancer/transcriptomics/RECON1_DepMap_expression.csv",
+  check.names = FALSE
+)
+cancer_evidence <- read.csv(
+  "datasets_and_models/treated/cancer/transcriptomics/RECON1_DepMap_iMAT_evidence.csv",
+  check.names = FALSE
+)
+thresholds <- read.csv(
+  "datasets_and_models/treated/cancer/transcriptomics/RECON1_iMAT_evidence_thresholds.csv",
+  check.names = FALSE
+)
+breast_expression <- read.csv(
+  "datasets_and_models/treated/healthy/transcriptomics/RECON1_GTEx_breast_expression.csv",
+  check.names = FALSE
+)
+breast_evidence <- read.csv(
+  "datasets_and_models/treated/healthy/transcriptomics/RECON1_GTEx_breast_iMAT_evidence.csv",
+  check.names = FALSE
+)
+
+id_columns <- c("recon1_gene_id", "gene_symbol")
+stopifnot(identical(names(cancer_expression)[1:2], id_columns),
+          identical(names(cancer_evidence)[1:2], id_columns),
+          identical(names(breast_expression)[1:2], id_columns),
+          identical(names(breast_evidence)[1:2], id_columns))
+stopifnot(nrow(cancer_expression) == 1905L, ncol(cancer_expression) == 627L,
+          ncol(cancer_evidence) == 627L,
+          identical(names(breast_expression)[3], "GTEx_breast_tINIT_level"),
+          identical(names(breast_evidence)[3], "GTEx_breast"))
+stopifnot(identical(cancer_expression[, id_columns], cancer_evidence[, id_columns]),
+          identical(breast_expression[, id_columns], breast_evidence[, id_columns]),
+          identical(cancer_expression$recon1_gene_id, breast_expression$recon1_gene_id))
+
+cancer_sample <- "ACH_000019"
+stopifnot(cancer_sample %in% names(cancer_expression),
+          cancer_sample %in% names(cancer_evidence))
+depmap_crosswalk <- read.csv(
+  "datasets_and_models/treated/cancer/transcriptomics/DepMap_Jain_NCI60_crosswalk.csv",
+  stringsAsFactors = FALSE
+)
+mcf7_crosswalk <- depmap_crosswalk[depmap_crosswalk$depmap_sample_id == cancer_sample, , drop = FALSE]
+stopifnot(nrow(mcf7_crosswalk) == 1L,
+          mcf7_crosswalk$jain_cell_line == "MCF7",
+          mcf7_crosswalk$mapping_status == "matched",
+          mcf7_crosswalk$depmap_candidate_ids == cancer_sample)
+threshold_row <- thresholds[thresholds$sample_id == cancer_sample, , drop = FALSE]
+stopifnot(nrow(threshold_row) == 1L)
+threshold_row
+```
+
+**Question 1. Choosing and interpreting the profiles.** The crosswalk identifies `ACH_000019` as MCF7. The other profile is one archived GTEx breast-tissue sample. We will run both through the same network and biomass objective but different recipe-proxy media. What difference are we comparing, and why would it be too strong to call that a general cancer-versus-healthy difference?
+
+The Jain–DepMap crosswalk maps MCF7 uniquely to `ACH_000019`, and that sample is present in these matrices. GTEx breast is one archived, tissue-level profile. It is neither donor-matched to MCF7 nor a substitute for the Keibler HMEC culture profile.
+
+## 2. Inspect expression, missingness, and saved Q1/Q3 evidence
+
+Each input has **1,905 rows**, one per Recon1 gene-product entry. Here, “gene” means a model gene-product ID; different IDs can share a gene symbol. The QC below separates expression values from evidence categories:
+
+- For **expression**, `expression_zero` counts measured values exactly equal to 0. `nonmissing` includes all available numeric expression values, both zero and nonzero.
+- For **gene evidence**, `-1` means low, `0` means intermediate, and `+1` means high. In this table, `intermediate_zero` counts the evidence category `0`; it does **not** count zero expression. `NA` means evidence is missing/unavailable.
+
+For example, MCF7 has 1,694 nonmissing expression values: 161 are exactly zero and 1,533 are nonzero. Its 1,694 nonmissing evidence values are 426 low + 844 intermediate + 424 high. The other 211 gene-product rows are missing in both files. Missing values are not assumed to be unexpressed.
+
+```{r}
+#| label: summarize-expression-evidence
+expression_summary <- function(x) {
+  c(rows = length(x), nonmissing = sum(is.finite(x)),
+    expression_zero = sum(x == 0, na.rm = TRUE), missing = sum(is.na(x)))
+}
+evidence_summary <- function(x) {
+  c(rows = length(x), nonmissing = sum(!is.na(x)),
+    low_minus1 = sum(x == -1, na.rm = TRUE),
+    intermediate_zero = sum(x == 0, na.rm = TRUE),
+    high_plus1 = sum(x == 1, na.rm = TRUE), missing = sum(is.na(x)))
+}
+
+mcf7_tpm <- cancer_expression[[cancer_sample]]
+mcf7_gene_evidence <- cancer_evidence[[cancer_sample]]
+breast_level <- breast_expression[["GTEx_breast_tINIT_level"]]
+breast_gene_evidence <- breast_evidence[["GTEx_breast"]]
+profile_qc <- rbind(
+  MCF7_expression = expression_summary(mcf7_tpm),
+  GTEx_breast_expression = expression_summary(breast_level)
+)
+evidence_qc <- rbind(
+  MCF7_gene_evidence = evidence_summary(mcf7_gene_evidence),
+  GTEx_breast_gene_evidence = evidence_summary(breast_gene_evidence)
+)
+profile_qc
+evidence_qc
+
+stopifnot(all(profile_qc[, "nonmissing"] + profile_qc[, "missing"] == profile_qc[, "rows"]),
+          all(evidence_qc[, "low_minus1"] + evidence_qc[, "intermediate_zero"] +
+                evidence_qc[, "high_plus1"] == evidence_qc[, "nonmissing"]),
+          all(evidence_qc[, "nonmissing"] + evidence_qc[, "missing"] == evidence_qc[, "rows"]))
+```
+
+**How to read the output:** `rows` is the number of aligned gene-product entries. In the expression table, `expression_zero` counts entries whose measured expression equals zero. In the evidence table, `intermediate_zero` counts entries assigned evidence category `0`. Do not compare those two zero counts as if they measured the same thing.
+
+**Questions 2–3.**
+
+- How many MCF7 and breast values are missing? How many expression values are exactly zero?
+- Why must a missing expression/evidence value remain unknown rather than be replaced with zero or `-1`?
+- The MCF7 thresholds are saved per sample. Report Q1 and Q3 and explain what a discrete `-1`, `0`, `1`, or missing evidence value means.
+
+The DepMap source values are already TPM; do not normalize them a second time. The archived GTEx breast value has a different source/processing history (`tINIT` tissue-level input scale), so do not compare its numeric scale directly with DepMap TPM as though they were matched measurements. Q1/Q3 are profile-specific teaching cutoffs, not universal expression cutoffs and not reaction activity.
+
+## 3. Work through GPR logic with synthetic evidence
+
+A GPR connects gene products to a reaction. For this exercise, known discrete evidence combines as **AND = minimum** and **OR = maximum**. Unknown gene evidence stays `NA`, except when a known value already determines the logical result: an AND containing `-1` is `-1`, and an OR containing `+1` is `+1`. A reaction with no GPR has no evaluated gene evidence (`NA`), not evidence `0`.
+
+Before running the shared evaluator, work out all five fixtures by hand. The last two cases show when one known value determines an AND or OR result despite another gene being missing. Use only the synthetic gene labels below; they are not claims about Recon1 reactions.
+
+| Synthetic GPR | Gene evidence | Your reaction evidence |
+|---|---|---|
+| `G_A and G_B` | `G_A = 1`, `G_B = 0` | ____ |
+| `G_C or G_D` | `G_C = -1`, `G_D = 1` | ____ |
+| `(G_E and G_F) or G_G` | `G_E = 1`, `G_F = NA`, `G_G = -1` | ____ |
+| `G_low and G_F` | `G_low = -1`, `G_F = NA` | ____ |
+| `G_C or G_F` | `G_C = 1`, `G_F = NA` | ____ |
+
+```{r}
+#| label: evaluate-synthetic-gpr
+setwd(project_root)
+source("R/model_io.R")
+source("R/medium_scenarios.R")
+fixtures <- list(
+  and_intermediate = list(gpr = "G_A and G_B", evidence = c(G_A = 1, G_B = 0)),
+  or_high = list(gpr = "G_C or G_D", evidence = c(G_C = -1, G_D = 1)),
+  nested_unknown = list(gpr = "(G_E and G_F) or G_G", evidence = c(G_E = 1, G_F = NA, G_G = -1)),
+  and_decisive_low = list(gpr = "G_low and G_F", evidence = c(G_low = -1, G_F = NA)),
+  or_decisive_high = list(gpr = "G_C or G_F", evidence = c(G_C = 1, G_F = NA))
+)
+
+fixture_results <- vapply(fixtures, function(z) {
+  reaction_evidence_from_gpr(z$gpr, z$evidence)
+}, numeric(1))
+data.frame(
+  fixture = names(fixture_results),
+  gpr = vapply(fixtures, `[[`, character(1), "gpr"),
+  gene_evidence = vapply(fixtures, function(z) {
+    paste(names(z$evidence), unname(z$evidence), sep = " = ", collapse = "; ")
+  }, character(1)),
+  reaction_evidence = unname(fixture_results),
+  row.names = NULL
+)
+```
+
+Each row is one hypothetical reaction: its GPR combines the listed gene-product evidence, and `reaction_evidence` is the single result for that reaction. The five output rows correspond directly, in order, to the five rows in the hand-calculation table above: `0`, `1`, `NA`, `-1`, and `1`. These are synthetic reactions, not reactions selected from Recon1.
+
+**Questions 4–5. Use the output table to answer:**
+
+- **Check the five results.** Compare the `reaction_evidence` column with your five hand calculations. Are the results `0`, `1`, `NA`, `-1`, and `1` in the expected order?
+- **Explain the nested case.** Why does `(G_E and G_F) or G_G` remain `NA` when `G_E = 1`, `G_F = NA`, and `G_G = -1`?
+- **Identify decisive evidence.** In an AND rule, which known value can determine the result despite one missing gene? In an OR rule, which known value can do the same?
+- **Check an empty rule.** What should the shared evaluator return when a reaction has an empty GPR, and why is that different from evidence `0`?
+
+The shared function parses the restricted GPR grammar; it does not evaluate GPR text as R code. The fixtures above are deliberately synthetic tests of the API's policy.
+
+## 4. Reconstruction status and handoff
+
+A reaction evidence vector is still **not** a context-specific model. Here the shared `reconstruct_context()` performs a configured signed-flux iMAT-like MILP: it rewards high-evidence reactions active above epsilon and low-evidence reactions inactive within epsilon, while requiring at least the configured fraction of the same-medium biomass optimum. Intermediate and unknown evidence are neutral; unknown values are never recoded. Signed net-flux indicators explicitly allow either direction for reversible reactions.
+
+**Figure: evidence is an input to MILP, not a flux result.** The reaction-evidence value `1` rewards a reaction being active, but does not force it to carry flux. The MILP chooses the flux vector while satisfying the steady-state constraint, medium bounds, and biomass requirement. The reaction is called active only when the selected flux satisfies the configured activity threshold `epsilon`.
+
+<figure>
+  <object data="../config/imat.pdf" type="application/pdf" width="100%" height="520">
+    <a href="../config/imat.pdf">Open the iMAT concept figure as a PDF.</a>
+  </object>
+  <figcaption>Gene-product evidence is combined by the GPR and passed to the MILP; the solved flux value determines whether the reaction is active or inactive.</figcaption>
+</figure>
+
+Do not treat these expression profiles as matched experimental samples. MCF7 (`ACH_000019`) is one cell line in the multi-lineage NCI-60 panel; Jain's NCI-60 assay medium is complete RPMI-1640 + 2 mM glutamine + 5% FBS. GTEx breast is a tissue-level profile, not Keibler's cultured 184A1 HMEC; Keibler used supplemented DMEM. The primary comparison below uses recipe-derived scenario bounds and keeps measured Jain/Keibler exchange outcomes held out for assessment. This is a combined expression-plus-medium-assumption comparison, not a matched tumor/healthy experiment.
+
+| Comparison scenario | Expression profile(s) | Exchange constraints |
+|---|---|---|
+| Primary MCF7 context | MCF7 (`ACH_000019`) | Jain NCI-60 RPMI recipe scenario; no measured Jain exchange rates or directions used as constraints |
+| Primary healthy context proxy | GTEx breast | Exercise 1 Keibler-derived EV +5 ng/mL EGF bounds; measured and assumed components remain documented separately |
+
+GTEx breast is a tissue-level profile, not Keibler 184A1 HMEC expression. MCF7 is one cell line in the multi-lineage NCI-60 panel. Jain's local supplement documents CORE rates in `fmol/cell/h`, but this workflow does not read those rates when building the MCF7 model. The exact RPMI catalog formulation and MCF7-specific biomass-time/dry-mass conversion are unresolved. Therefore the MCF7 medium is an explicitly assumption-based recipe proxy: every defined component of the standard RPMI-1640 reference formulation (with Jain's 2 mM glutamine) in [medium_reference_formulations.csv](../config/medium_reference_formulations.csv) is capped with the same inventory factor as the Exercise 1 Keibler medium (same assumed volume and biomass-time); the 35 mL/4–5-day Jain culture conditions are not converted into Recon1 units. This is a pedagogical scenario, not a quantitative reconstruction of the Jain assay. FBS is not assigned guessed exchange bounds. The outputs report recipe scenario constraints separately from iMAT-integrated reaction bounds, plus solver/QC and provenance.
+
+### 4.1 Set up the model and source-specific recipe scenarios
+
+Load the hands-on Recon1 model, the Exercise 1 Keibler-derived bounds, and the iMAT settings. Derive a separate MCF7 RPMI recipe proxy from the RPMI-1640 reference concentrations using the Keibler inventory factor. O2, CO2, H2O, and H+ keep the shared exercise setting. Jain/Keibler observed exchange measurements and direction summaries are not inputs to either model.
+
+```{r}
+#| label: setup-source-specific-media
+# Stage 1: load the model, the Keibler scenario, and iMAT settings.
+setwd(project_root)
+hands_on <- load_model("datasets_and_models/models/RECON1_biomass.xml", "config/model_manifest.csv")
+keibler_medium <- read_medium("config/medium_bounds.csv", "Keibler_184A1_EV_EGF5_growth_adjusted_v2")
+imat_config <- read_imat_settings("config/imat_settings.yml")
+formulations <- read.csv("config/medium_reference_formulations.csv", stringsAsFactors = FALSE)
+jain_mcf7_medium <- build_rpmi_recipe_proxy(keibler_medium, formulations)
+stopifnot(!isTRUE(jain_mcf7_medium$assumptions$validation_measurements_used))
+```
+
+### 4.2 Validate the two integrated context inputs
+
+Each context uses 42 explicit exchange bounds. The two scenarios differ wherever the two reference formulations differ in concentration (for example glucose, glutamine, the non-essential amino acids present only in RPMI, phosphate, and iron); the shared gas/solvent settings for O2, CO2, H2O, and H+ are identical. The scale transfer uses a shared Exercise 1 assumed biomass-time denominator; it does not account for the distinct Jain flask volume or 4/5-day exposure and is not an experimental uptake estimate.
+
+```{r}
+#| label: validate-context-scenarios
+
+stopifnot(identical(hands_on$objective_id, imat_config$objective_id),
+          hands_on$objective_sense == imat_config$objective_sense,
+          nrow(keibler_medium$bounds) == 42L,
+          all(keibler_medium$bounds$reaction_id %in% hands_on$exchange_ids),
+          all(jain_mcf7_medium$bounds$reaction_id %in% hands_on$exchange_ids),
+          nrow(jain_mcf7_medium$bounds) == 42L,
+          setequal(jain_mcf7_medium$bounds$reaction_id, keibler_medium$bounds$reaction_id),
+          identical(jain_mcf7_medium$bounds$reaction_id, keibler_medium$bounds$reaction_id))
+medium_difference <- merge(
+  keibler_medium$bounds[, c("reaction_id", "lower_bound", "upper_bound")],
+  jain_mcf7_medium$bounds[, c("reaction_id", "lower_bound", "upper_bound")],
+  by = "reaction_id", suffixes = c("_Keibler", "_Jain")
+)
+medium_difference <- medium_difference[
+  medium_difference$lower_bound_Keibler != medium_difference$lower_bound_Jain |
+    medium_difference$upper_bound_Keibler != medium_difference$upper_bound_Jain, , drop = FALSE
+]
+shared_settings <- c("R_EX_o2_e", "R_EX_co2_e", "R_EX_h2o_e", "R_EX_h_e")
+stopifnot(all(c("R_EX_glc__D_e", "R_EX_gln__L_e") %in% medium_difference$reaction_id),
+          !any(shared_settings %in% medium_difference$reaction_id))
+medium_difference
+data.frame(
+  model_sha256 = hands_on$source_sha256,
+  objective_id = hands_on$objective_id,
+  objective_sense = hands_on$objective_sense,
+  medium_id = keibler_medium$id,
+  medium_source = keibler_medium$source,
+  explicit_exchange_bounds = nrow(keibler_medium$bounds),
+  jain_mcf7_bound_count = nrow(jain_mcf7_medium$bounds),
+  recipe_differing_exchange_count = nrow(medium_difference),
+  inventory_factor = jain_mcf7_medium$assumptions$inventory_factor_mmol_per_gDW_h_per_mM,
+  settings_id = imat_config$id,
+  epsilon = imat_config$epsilon,
+  growth_fraction = imat_config$growth_fraction,
+  solver = imat_config$solver,
+  solver_version = imat_config$solver_version
+)
+```
+
+### 4.3 Generate the two integrated context-specific models
+
+Reconstruct both contexts independently under the same model, biomass objective, and MILP settings, but with their scenario-specific exchange constraints. The shared API applies the medium and then clamps all final bounds to the configured flux cap. Recipe bounds remain available separately from the iMAT restrictions. As in iMAT, the context model limits only the low-evidence reactions that the MILP solution left inactive (to within ±epsilon); high-evidence reactions are rewarded in the MILP but are **not** forced to carry flux in the resulting model. Forcing hundreds of active reactions to carry at least epsilon would impose arbitrary flux directions (for example, lactate oxidation by LDH) and drain carbon and oxygen.
+
+The SBML gene-product IDs use a `G_` prefix, whereas the prepared matrices use the exact Recon1 annotation IDs without that prefix. The code verifies a one-to-one mapping of all 1,905 model IDs against the supplied annotation and then aligns by ID; it does not map by symbol or row order.
+
+```{r}
+#| label: run-context-milp
+setwd(project_root)
+gene_evidence_for <- function(evidence_table, column, model) {
+  annotation <- read.csv("datasets_and_models/treated/cancer/transcriptomics/RECON1_gene_annotation.csv", stringsAsFactors = FALSE)
+  ids <- sub("^G_", "", model$gene_ids)
+  if (!all(startsWith(model$gene_ids, "G_")) || anyDuplicated(ids) ||
+      anyDuplicated(annotation$recon1_gene_id) || !setequal(ids, annotation$recon1_gene_id) ||
+      anyDuplicated(evidence_table$recon1_gene_id) || !setequal(ids, evidence_table$recon1_gene_id)) {
+    stop("The verified SBML-to-expression Recon1 gene ID mapping is not one-to-one.")
+  }
+  values <- evidence_table[[column]][match(ids, evidence_table$recon1_gene_id)]
+  names(values) <- model$gene_ids
+  values
+}
+
+mcf7_evidence <- gene_evidence_for(cancer_evidence, cancer_sample, hands_on)
+breast_evidence_values <- gene_evidence_for(breast_evidence, "GTEx_breast", hands_on)
+mcf7_context <- reconstruct_context(hands_on, mcf7_evidence, jain_mcf7_medium, imat_config)
+breast_context <- reconstruct_context(hands_on, breast_evidence_values, keibler_medium, imat_config)
+
+for (context in list(mcf7_context, breast_context)) {
+  if (!context$status %in% c("optimal", "time_limit") || !isTRUE(context$incumbent_feasible)) {
+    stop("iMAT MILP did not finish optimally (status=", context$status,
+         ", solver code=", context$solver_code,
+         ", feasible incumbent=", context$incumbent_feasible,
+         "). No verified context output is available; inspect settings/solver diagnostics.")
+  }
+  if (context$reconstructed_fba_status != "optimal" || context$incumbent_biomass_value <= 0 || context$max_abs_sv > 1e-7) {
+    stop("Context model QC failed: reconstructed model must solve with positive biomass and residual <= 1e-7.")
+  }
+}
+```
+
+### 4.4 Compare reaction capacity and selected activity
+
+The reconstructed models retain the **same reaction IDs** as the full Recon1 model. Here, "capacity above epsilon" means a bound still permits $|v|>\epsilon$, not that the reaction actually carries flux. Conversely, "limited to ±epsilon" includes reactions constrained by iMAT to a small but **nonzero permitted** interval. The last column counts $|v|>10^{-7}$ in **one selected optimal FBA solution**, not every reaction capable of flux. The full source model has no fixed scenario medium, so it has no comparable selected WT FBA count.
+
+```{r}
+#| label: count-reconstructed-reactions
+setwd(project_root)
+capacity_epsilon <- imat_config$epsilon
+count_tolerance <- 1e-8
+reaction_counts <- function(model, label, selected_fba = NULL) {
+  stopifnot(inherits(model, "session5_model"),
+    identical(names(model$lb), model$reaction_ids),
+    identical(names(model$ub), model$reaction_ids),
+    all(model$lb <= model$ub))
+  limited <- model$lb >= -capacity_epsilon - count_tolerance &
+    model$ub <= capacity_epsilon + count_tolerance
+  open_above <- model$lb < -capacity_epsilon - count_tolerance |
+    model$ub > capacity_epsilon + count_tolerance
+  stopifnot(all(limited != open_above))
+  if (!is.null(selected_fba)) stopifnot(selected_fba$status == "optimal",
+    selected_fba$max_abs_sv <= selected_fba$tolerance,
+    is.finite(selected_fba$objective_value), selected_fba$objective_value > 0)
+  data.frame(model = label, total_reaction_ids = length(model$reaction_ids),
+    bounds_closed_at_zero = sum(model$lb == 0 & model$ub == 0),
+    limited_to_plus_minus_epsilon = sum(limited),
+    capacity_above_epsilon = sum(open_above),
+    selected_fba_nonzero_above_1e_minus_7 = if (is.null(selected_fba)) NA_integer_ else
+      sum(abs(selected_fba$fluxes[model$reaction_ids]) > 1e-7),
+    stringsAsFactors = FALSE)
+}
+stopifnot(identical(hands_on$reaction_ids, mcf7_context$model$reaction_ids),
+  identical(hands_on$reaction_ids, breast_context$model$reaction_ids))
+selected_mcf7 <- solve_fba(mcf7_context$model)
+selected_breast <- solve_fba(breast_context$model)
+reaction_count_table <- do.call(rbind, list(
+  reaction_counts(hands_on, "Full Recon1 source (no fixed medium)"),
+  reaction_counts(mcf7_context$model, "MCF7 / RPMI proxy", selected_mcf7),
+  reaction_counts(breast_context$model, "GTEx breast / Keibler proxy", selected_breast)))
+stopifnot(all(reaction_count_table$total_reaction_ids == length(hands_on$reaction_ids)),
+  all(reaction_count_table$bounds_closed_at_zero == 0L),
+  identical(as.integer(reaction_count_table$limited_to_plus_minus_epsilon[2:3]),
+    c(mcf7_context$evidence_qc$negative_inactive, breast_context$evidence_qc$negative_inactive)))
+reaction_count_table
+```
+
+**Interpretation:** At the configured $\epsilon=0.1$ mmol/gDW/h, MCF7 limits 358 reactions and GTEx/Keibler limits 297, but **neither model deletes these reactions**. Flux can still pass up to 0.1 through a limited reaction. One selected FBA vector uses 646 versus 658 reactions at the stated near-zero threshold; an alternative optimum could select different fluxes. The full-model row describes source reaction bounds **without** an instructor medium and must not be read as a growth or activity baseline. These scenario differences mix expression with the distinct RPMI/Keibler proxy media, not a measured tumor-versus-normal phenotype.
+
+**Check the reconstruction setup and interpretation:**
+
+- **Objective and solver settings:** Are the biomass objective, objective direction, epsilon, growth fraction, solver, and other iMAT settings the same for both contexts? Use the configuration table and the saved provenance/QC output.
+- **Exchange constraints:** Are the recipe scenario bounds identical? If not, identify which nutrient caps differ and explain why the MCF7 values remain assumption-based rather than measured Jain fluxes.
+- **iMAT objective:** What does the MILP reward? Explain how high-evidence reactions are rewarded for carrying flux and low-evidence reactions are rewarded for remaining inactive, while intermediate and unknown evidence are neutral.
+- **Meaning of success:** Why does an optimal, mass-balanced MILP solution show only that a feasible flux assignment satisfies the declared model constraints? Why does it not prove that the source samples are matched biological specimens or that the predicted biomass flux equals measured growth?
+
+## 5. Save reusable models and provenance QC
+
+If both reconstructions return optimal solutions or constraint-verified time-limit incumbents and pass post-reconstruction FBA checks, the next chunk writes two reusable scenario-specific RDS files, two SBML/XML exports, and tabular QC to `Exercise2_expression_integration/outputs/`. The RDS files retain the full MILP solution and provenance; the XML files provide interoperable network models with the effective scenario exchange bounds. No values are hard-coded as results; a solver failure reports its status and writes no biological context checkpoint.
+
+The exported models are `context_MCF7_ACH_000019_Jain.xml` and `context_GTEx_breast_Keibler.xml`. SBML preserves the Recon1 network, objective, and capped scenario exchange-medium bounds; it does not encode the iMAT inactivity limits. The RDS files preserve both the pre-iMAT scenario model and the integrated model, selected MILP fluxes, reaction evidence, solver QC, and provenance metadata.
+
+```{r}
+#| label: persist-context-models-and-qc
+setwd(project_root)
+output_dir <- "Exercise2_expression_integration/outputs"
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+write.csv(reaction_count_table, file.path(output_dir, "reaction_count_comparison.csv"), row.names = FALSE)
+settings_path <- "config/imat_settings.yml"
+medium_path <- "config/medium_bounds.csv"
+evidence_paths <- c(
+  MCF7_ACH_000019_Jain = "datasets_and_models/treated/cancer/transcriptomics/RECON1_DepMap_iMAT_evidence.csv",
+  GTEx_breast_Keibler = "datasets_and_models/treated/healthy/transcriptomics/RECON1_GTEx_breast_iMAT_evidence.csv"
+)
+threshold_path <- "datasets_and_models/treated/cancer/transcriptomics/RECON1_iMAT_evidence_thresholds.csv"
+crosswalk_path <- "datasets_and_models/treated/cancer/transcriptomics/DepMap_Jain_NCI60_crosswalk.csv"
+contexts <- list(MCF7_ACH_000019_Jain = mcf7_context, GTEx_breast_Keibler = breast_context)
+sample_ids <- c(MCF7_ACH_000019_Jain = "ACH_000019", GTEx_breast_Keibler = "GTEx_breast")
+scenario_mediums <- list(MCF7_ACH_000019_Jain = jain_mcf7_medium, GTEx_breast_Keibler = keibler_medium)
+medium_paths <- c(
+  MCF7_ACH_000019_Jain = "config/medium_reference_formulations.csv",
+  GTEx_breast_Keibler = medium_path
+)
+qc_rows <- vector("list", length(contexts))
+effective_bounds <- vector("list", length(contexts))
+
+for (i in seq_along(contexts)) {
+  context_name <- names(contexts)[[i]]
+  result <- contexts[[i]]
+  scenario_medium <- scenario_mediums[[context_name]]
+  evidence_file <- evidence_paths[[context_name]]
+  result$provenance <- list(
+    context = context_name,
+    scenario_id = context_name,
+    profile_id = unname(sample_ids[[context_name]]),
+    source_model_path = hands_on$model_path,
+    source_model_sha256 = hands_on$source_sha256,
+    evidence_file = evidence_file,
+    evidence_sha256 = digest::digest(file = evidence_file, algo = "sha256"),
+    threshold_file = threshold_path,
+    threshold_sha256 = digest::digest(file = threshold_path, algo = "sha256"),
+    crosswalk_file = crosswalk_path,
+    crosswalk_sha256 = digest::digest(file = crosswalk_path, algo = "sha256"),
+    settings_file = settings_path,
+    settings_sha256 = digest::digest(file = settings_path, algo = "sha256"),
+    medium_file = medium_paths[[context_name]],
+    medium_sha256 = digest::digest(file = medium_paths[[context_name]], algo = "sha256"),
+    medium_id = scenario_medium$id,
+    medium_source = scenario_medium$source,
+    medium_assumptions = if (context_name == "MCF7_ACH_000019_Jain")
+      "standard RPMI-1640 reference concentrations with Jain 2 mM glutamine, capped with the shared Exercise 1 inventory factor; exact Jain catalog, volume/time conversion, and MCF7 biomass-time unresolved; FBS not represented; no Jain exchange outcomes used"
+      else "Keibler 10 mM glucose/4 mM glutamine plus standard DMEM reference concentrations, capped by the Exercise 1 growth-adjusted complete-depletion calculation; growth-rate unit and dry-mass assumptions documented in Exercise 1",
+    held_out_measurements = "Jain and Keibler extracellular exchange measurements/direction summaries are not medium-bound inputs",
+    warnings = "MCF7 cell line and GTEx breast tissue are unmatched source contexts; FBA biomass is model output, not measured growth; MCF7 RPMI values are a recipe proxy, not fully source-native quantitative bounds; Keibler bounds include stated assumptions",
+    objective_id = result$model$objective_id,
+    objective_sense = result$model$objective_sense,
+    solver = result$solver,
+    solver_version = result$solver_version,
+    solver_engine_version = result$solver_engine_version
+  )
+  result$effective_exchange_bounds <- result$scenario_exchange_bounds
+  saveRDS(result, file.path(output_dir, paste0("context_", context_name, ".rds")))
+  qc_rows[[i]] <- cbind(
+    data.frame(context = context_name, profile_id = unname(sample_ids[[context_name]]),
+      source_model_sha256 = hands_on$source_sha256,
+      evidence_sha256 = result$provenance$evidence_sha256,
+      threshold_sha256 = result$provenance$threshold_sha256,
+      crosswalk_sha256 = result$provenance$crosswalk_sha256,
+      settings_id = imat_config$id, settings_sha256 = result$provenance$settings_sha256,
+      scenario_id = context_name, medium_id = scenario_medium$id, medium_source = scenario_medium$source,
+      warnings = result$provenance$warnings,
+      medium_bound_count = nrow(scenario_medium$bounds),
+      objective_id = result$model$objective_id,
+      objective_sense = result$model$objective_sense, solver = result$solver,
+      solver_version = result$solver_version, solver_engine_version = result$solver_engine_version,
+      milp_status = result$status,
+      objective_value = result$objective_value, incumbent_biomass_value = result$incumbent_biomass_value,
+      imat_objective = result$imat_objective, solver_incumbent_objective = result$solver_incumbent_objective,
+      incumbent_feasible = result$incumbent_feasible,
+      reconstructed_fba_status = result$reconstructed_fba_status,
+      reconstructed_fba_objective_value = result$reconstructed_fba_objective_value,
+      max_abs_sv = result$max_abs_sv, stringsAsFactors = FALSE),
+    result$evidence_qc
+  )
+  effective_bounds[[i]] <- cbind(context = context_name, result$effective_exchange_bounds)
+}
+reconstruction_qc <- do.call(rbind, qc_rows)
+write.csv(reconstruction_qc, file.path(output_dir, "reconstruction_qc.csv"), row.names = FALSE)
+write.csv(do.call(rbind, effective_bounds), file.path(output_dir, "effective_exchange_bounds.csv"), row.names = FALSE)
+
+sbml_export_script <- "scripts/export_context_sbml.py"
+python_executable <- Sys.which("python3")
+if (!nzchar(python_executable) || !file.exists(sbml_export_script)) {
+  stop("SBML export requires python3 and scripts/export_context_sbml.py.")
+}
+sbml_exports <- c(
+  MCF7_ACH_000019_Jain = file.path(output_dir, "context_MCF7_ACH_000019_Jain.xml"),
+  GTEx_breast_Keibler = file.path(output_dir, "context_GTEx_breast_Keibler.xml")
+)
+for (scenario_id in names(sbml_exports)) {
+  status <- system2(
+    python_executable,
+    c(shQuote(sbml_export_script), "--source", shQuote(hands_on$model_path),
+      "--bounds", shQuote(file.path(output_dir, "effective_exchange_bounds.csv")),
+      "--scenario", shQuote(scenario_id), "--output", shQuote(sbml_exports[[scenario_id]]))
+  )
+  if (!identical(status, 0L) || !file.exists(sbml_exports[[scenario_id]])) {
+    stop("SBML export failed for scenario: ", scenario_id)
+  }
+}
+reconstruction_qc
+```
+
+Reload the written outputs in a later exercise/session and verify each declared scenario before analysis:
+
+```{r}
+#| label: reload-and-verify-context-output
+setwd(project_root)
+saved_mcf7 <- readRDS(file.path(output_dir, "context_MCF7_ACH_000019_Jain.rds"))
+saved_breast <- readRDS(file.path(output_dir, "context_GTEx_breast_Keibler.rds"))
+stopifnot(file.exists(file.path(output_dir, "context_MCF7_ACH_000019_Jain.xml")),
+          file.exists(file.path(output_dir, "context_GTEx_breast_Keibler.xml")))
+stopifnot(identical(saved_mcf7$provenance$source_model_sha256, hands_on$source_sha256),
+          identical(saved_breast$provenance$source_model_sha256, hands_on$source_sha256),
+          saved_mcf7$provenance$medium_id != saved_breast$provenance$medium_id,
+          identical(saved_mcf7$provenance$scenario_id, "MCF7_ACH_000019_Jain"),
+          identical(saved_breast$provenance$scenario_id, "GTEx_breast_Keibler"),
+          identical(saved_mcf7$model$objective_id, saved_breast$model$objective_id),
+          identical(saved_mcf7$settings$id, saved_breast$settings$id),
+          saved_mcf7$incumbent_feasible, saved_breast$incumbent_feasible,
+          saved_mcf7$status %in% c("optimal", "time_limit"), saved_breast$status %in% c("optimal", "time_limit"))
+data.frame(context = c(saved_mcf7$provenance$context, saved_breast$provenance$context),
+  scenario_id = c(saved_mcf7$provenance$scenario_id, saved_breast$provenance$scenario_id),
+  medium_id = c(saved_mcf7$provenance$medium_id, saved_breast$provenance$medium_id),
+  objective_id = c(saved_mcf7$model$objective_id, saved_breast$model$objective_id),
+  milp_status = c(saved_mcf7$status, saved_breast$status),
+  source_model_sha256 = c(saved_mcf7$provenance$source_model_sha256, saved_breast$provenance$source_model_sha256))
+```
+
+**Interpretation:** compare model/evidence QC and biomass feasibility, but treat differences as model outputs conditional on shared solver settings **and different scenario-medium assumptions**. Do not describe them as experimental growth rates, matched-normal comparisons, or clinical predictions. MCF7's numeric RPMI bounds are an explicit recipe proxy, not a quantitative reconstruction of the Jain assay.
+
+Do not call a thresholded evidence table a model, and do not claim retained functions, growth feasibility, or reaction fluxes from gene evidence alone.
+
+**Exit questions.**
+
+1. Describe the chain from expression to gene evidence to GPR reaction evidence to the configured MILP context model. Which solver/QC evidence supports the outputs?
+2. Why can two Recon1 gene-product IDs share a symbol/evidence value without proving that a reaction flux is identical?
+3. Explain why an identical medium is needed to isolate expression-profile effects, and why native Keibler-versus-Jain media instead compare combined contexts.

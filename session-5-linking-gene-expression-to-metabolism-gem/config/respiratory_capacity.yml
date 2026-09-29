@@ -1,0 +1,10 @@
+# Oxygen-bound sensitivity scenario for Exercise 3; assumptions, not measured OXPHOS rates.
+id: oxygen_bound_sensitivity_v3
+# Same maximum O2 uptake bound in both contexts; this is a constraint, not actual oxygen use.
+o2_uptake_capacity: 1
+o2_uptake_unit: mmol_per_gDW_per_hr
+# Exercise 1 complete-depletion assumption applied as an equality: cells consume the available glucose.
+fix_glucose_at_cap: true
+# Methylglyoxal-derived D-lactate is a minor product in cells but an FBA loophole replacing L-lactate.
+closed_secretions: R_EX_lac__D_e
+selected_solution: pFBA

@@ -1,0 +1,497 @@
+---
+title: "Exercise 1 — Model inspection and baseline FBA"
+subtitle: "Student worksheet | 25 minutes"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Learning goals
+
+By the end, you should be able to describe a genome-scale metabolic model (GEM) as a steady-state constraint $S\mathbf{v}=0$, reaction bounds, and an objective; distinguish an objective function from a biological growth measurement; and explain exchange-flux signs and solver quality checks.
+
+> **Model basis.** The instructor-approved 41-term biomass reaction is a deliberate Recon1 adaptation informed by the supplied Recon2 biomass and the instructor's adaptation; the documented donor comparison is in `../config/biomass_donor_audit.md`. The Keibler 184A1 supplemented-DMEM recipe and Jain NCI-60 RPMI recipe are transcribed from their experimental literature and summarized in `../config/medium_source_notes.md`. This worksheet turns the selected Keibler EV +5 ng/mL EGF composition into explicit exchange constraints, runs FBA, and checks solver status, flux signs, and mass-balance residual. In the growth-adjusted inventory calculation, specific exchange flux is treated as constant per gDW during the exponential interval; whole-well uptake therefore scales with biomass. The generic 333 pgDW/cell value is a stated conversion assumption, not a direct Keibler measurement. Keibler's protein-per-cell evidence supports a within-condition growth proxy, but not a universal conversion across EGF conditions. See `../config/candidate_protein_to_dry_mass_assumptions.csv` and `../config/medium_source_notes.md`.
+
+## 1. Load and inspect both models
+
+Open an R session with the `exercises/` folder as the project root. Load the shared parser. The original model is included only to compare its original objective; use the hands-on file for any later work after the release gates are cleared.
+
+```{r}
+#| label: load-and-count-models
+project_root <- c(".", "..", "../..")
+project_root <- project_root[file.exists(file.path(project_root, "R/model_io.R"))][1]
+if (is.na(project_root)) stop("Open this worksheet from the exercises project root or its Exercise 1 folder.")
+project_root <- normalizePath(project_root, mustWork = TRUE)
+knitr::opts_knit$set(root.dir = project_root)
+setwd(project_root)
+source("R/model_io.R")
+original <- load_model("datasets_and_models/models/RECON1.xml", "config/model_manifest.csv")
+hands_on <- load_model("datasets_and_models/models/RECON1_biomass.xml", "config/model_manifest.csv")
+
+c(genes = length(hands_on$gene_ids), reactions = length(hands_on$reaction_ids),
+  metabolites = length(hands_on$metabolite_ids),
+  exchange_reactions = length(hands_on$exchange_ids))
+
+c(genes = length(original$gene_ids), reactions = length(original$reaction_ids),
+  metabolites = length(original$metabolite_ids),
+  exchange_reactions = length(original$exchange_ids))
+```
+
+**Check:** Which model has one additional reaction? Which model is the intended hands-on model, and why should the original not be used as a growth model?
+
+Inspect one AND rule, one OR rule, one rule that mixes AND and OR, and one reaction with no GPR. AND means all required gene products form the reaction machinery; OR represents alternative gene products/isozymes; a mixed rule contains both types of relationship.
+
+```{r}
+#| label: inspect-gpr-examples
+if (!exists("hands_on", inherits = FALSE)) {
+  project_root <- c(".", "../..")
+  project_root <- project_root[file.exists(file.path(project_root, "R/model_io.R"))][1]
+  if (is.na(project_root)) stop("Run from the exercises project root or its Exercise 1 folder.")
+  setwd(project_root)
+  source("R/model_io.R")
+  hands_on <- load_model("datasets_and_models/models/RECON1_biomass.xml", "config/model_manifest.csv")
+}
+
+gpr_example_ids <- c(
+  and_only = "R_GLUCYS",
+  or_only = "R_34DHPHAMT",
+  mixed_and_or = "R_ACACT1m",
+  no_gpr = names(hands_on$gpr)[!nzchar(hands_on$gpr)][1]
+)
+
+reaction_equation <- function(model, reaction_id) {
+  coefficients <- as.numeric(model$S[, reaction_id])
+  names(coefficients) <- rownames(model$S)
+  format_side <- function(values) {
+    ids <- names(values)
+    labels <- unname(model$metabolite_names[ids])
+    terms <- ifelse(abs(values) == 1, labels, paste(format(abs(values), digits = 5), labels))
+    paste(terms, collapse = " + ")
+  }
+  reactants <- coefficients[coefficients < 0]
+  products <- coefficients[coefficients > 0]
+  direction <- if (model$lb[[reaction_id]] < 0 && model$ub[[reaction_id]] > 0) " <=> " else " -> "
+  paste0(format_side(reactants), direction, format_side(products))
+}
+
+# BiGG universal reaction cross-reference EC annotations; the local Recon1
+# SBML does not encode EC numbers for these reactions.
+ec_reference <- c(
+  R_GLUCYS = "6.3.2.2",
+  R_34DHPHAMT = "2.1.1.6",
+  R_ACACT1m = "2.3.1.9"
+)
+gpr_examples <- data.frame(
+  rule_type = names(gpr_example_ids),
+  reaction_id = unname(gpr_example_ids),
+  reaction_name = unname(hands_on$reaction_names[gpr_example_ids]),
+  ec_number = unname(ec_reference[gpr_example_ids]),
+  gpr = unname(hands_on$gpr[gpr_example_ids]),
+  reaction = vapply(gpr_example_ids, function(id) reaction_equation(hands_on, id), character(1)),
+  ec_source = ifelse(names(gpr_example_ids) == "no_gpr", "not applicable",
+    paste0("BiGG: https://bigg.ucsd.edu/api/v2/universal/reactions/", sub("^R_", "", gpr_example_ids))),
+  stringsAsFactors = FALSE
+)
+gpr_examples
+```
+
+**Explain:** For each row, explain what the Boolean rule means for the reaction. A mixed rule such as `A or (B and C)` means either gene product A alone or the B+C combination can support the reaction. A missing GPR means the model provides no gene rule; it does not mean zero activity or a deleted gene. EC numbers above are cross-referenced from BiGG because this local SBML does not contain those annotations; EC classifies enzyme chemistry and does not define the GPR.
+
+## 2. Exchange direction and sign
+
+Inspect the extracellular species coefficient in the two exchange columns:
+
+```{r}
+#| label: inspect-exchange-stoichiometry
+exchange_stoichiometry <- function(model, reaction_id) {
+  z <- model$S[, reaction_id]
+  nz <- which(z != 0)
+  coefficient <- as.numeric(z[nz])
+  lower_bound <- model$lb[[reaction_id]]
+  upper_bound <- model$ub[[reaction_id]]
+  allowed_directions <- if (lower_bound < 0 && upper_bound > 0) {
+    "uptake and secretion"
+  } else if ((coefficient < 0 && lower_bound < 0) || (coefficient > 0 && upper_bound > 0)) {
+    "uptake only"
+  } else if ((coefficient < 0 && upper_bound > 0) || (coefficient > 0 && lower_bound < 0)) {
+    "secretion only"
+  } else {
+    "blocked"
+  }
+  data.frame(
+    reaction_id = reaction_id,
+    metabolite_id = rownames(model$S)[nz],
+    coefficient = coefficient,
+    lower_bound = lower_bound,
+    upper_bound = upper_bound,
+    allowed_source_directions = allowed_directions
+  )
+}
+
+if (!exists("healthy_directions", inherits = FALSE)) {
+  healthy_directions <- read.csv(
+    "datasets_and_models/treated/healthy/metabolomics/Keibler2021_observed_exchange_directions.csv",
+    stringsAsFactors = FALSE
+  )
+}
+if (!exists("cancer_directions", inherits = FALSE)) {
+  cancer_directions <- read.csv(
+    "datasets_and_models/treated/cancer/metabolomics/Jain2012_NCI60_observed_exchange_directions.csv",
+    stringsAsFactors = FALSE
+  )
+}
+
+experimental_direction_inventory <- rbind(
+  data.frame(
+    source_dataset = "Keibler 184A1",
+    exchange_reaction_id = healthy_directions$exchange_reaction_id,
+    metabolite = healthy_directions$metabolite,
+    observed_direction = healthy_directions$direction_across_assayed_conditions,
+    stringsAsFactors = FALSE
+  ),
+  data.frame(
+    source_dataset = "Jain NCI-60",
+    exchange_reaction_id = cancer_directions$exchange_reaction_id,
+    metabolite = cancer_directions$metabolite,
+    observed_direction = cancer_directions$direction_across_NCI60_observations,
+    stringsAsFactors = FALSE
+  )
+)
+experimental_direction_inventory <- subset(
+  experimental_direction_inventory,
+  exchange_reaction_id != "EX_lac__D_e"
+)
+experimental_exchange_ids <- unique(experimental_direction_inventory$exchange_reaction_id)
+model_exchange_ids <- paste0("R_", experimental_exchange_ids)
+if (!all(model_exchange_ids %in% hands_on$exchange_ids)) {
+  stop("An experimental exchange is missing from the hands-on model.")
+}
+
+experimental_exchange_stoichiometry <- do.call(rbind, lapply(
+  experimental_exchange_ids,
+  function(exchange_id) {
+    model_id <- paste0("R_", exchange_id)
+    evidence <- subset(
+      experimental_direction_inventory,
+      exchange_reaction_id == exchange_id
+    )
+    result <- exchange_stoichiometry(hands_on, model_id)
+    result$metabolite <- evidence$metabolite[[1L]]
+    result$experimental_sources <- paste(evidence$source_dataset, collapse = "; ")
+    result$observed_directions <- paste(
+      paste(evidence$source_dataset, evidence$observed_direction, sep = ": "),
+      collapse = "; "
+    )
+    result
+  }
+))
+experimental_exchange_stoichiometry
+```
+
+For a single-metabolite exchange, the coefficient defines the flux-sign convention, while the bounds define the permitted directions. The table above includes every exchange represented in either experimental inventory, with D-lactate excluded as requested. Negative flux means uptake and positive flux means secretion for these $-1$ exchange orientations; the source bounds shown in the table determine whether both directions are currently allowed. The observed direction summaries are evidence for later review, not automatic model bounds. Healthy and cancer-specific bounds should be applied separately after checking units, condition, and metabolite mapping. The source SBML uses literal reaction IDs beginning `R_EX_`; the shared parser preserves this prefix.
+
+**Question:** Why is it unsafe to memorize “negative always means uptake” without checking the reaction's stoichiometry and convention?
+
+## 3. Compare the objectives
+
+```{r}
+#| label: compare-model-objectives
+data.frame(
+  model = c("original", "hands-on"),
+  active_objective_id = c(original$objective_id, hands_on$objective_id),
+  sense = c(original$objective_sense, hands_on$objective_sense),
+  nonzero_objective_reaction = c(
+    names(original$objective)[original$objective != 0],
+    names(hands_on$objective)[hands_on$objective != 0]
+  )
+)
+```
+
+The hands-on file retains the original `R_S6T14g` objective as an alternative, but its active objective is the instructor-approved adapted `R_biomass_reaction`. The original active objective maximizes a sulfotransferase reaction; that is not a measure of cell proliferation. The adapted biomass objective supports the executable teaching FBA; its optimum is conditional on the declared model and medium, not an experimentally measured growth rate.
+
+**Question:** Why would the original model's mathematical optimum not establish that a cultured cell can grow?
+
+## 4. Inspect the assay-specific medium records
+
+The two treated-data files describe the media used in the **Keibler 184A1 HMEC experiment** and the **Jain NCI-60 CORE experiment**. They are experiment/cell-culture scenarios, not matched healthy and cancer breast tissues: 184A1 is not the GTEx breast profile, and Jain's NCI-60 panel is not breast-only. MDA-MB-231's routine L-15 propagation recipe is not the medium used for Jain's CORE measurements.
+
+Load the records and compare major inputs. Blank Recon1 ID/bound fields are deliberate: students should first verify any metabolite mapping against the hands-on model and distinguish nutrient ingredients from complex or signaling supplements.
+
+```{r}
+#| label: inspect-medium-composition
+healthy_medium <- read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_184A1_medium_composition.csv", stringsAsFactors = FALSE)
+cancer_medium <- read.csv("datasets_and_models/treated/cancer/metabolomics/Jain2012_NCI60_medium_composition.csv", stringsAsFactors = FALSE)
+keibler_observations <- read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_Supporting_File_2.csv", stringsAsFactors = FALSE)
+keibler_growth_design <- read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_184A1_growth_design.csv", stringsAsFactors = FALSE)
+conversion_scenarios <- read.csv("config/candidate_protein_to_dry_mass_assumptions.csv", stringsAsFactors = FALSE)
+healthy_directions <- read.csv("datasets_and_models/treated/healthy/metabolomics/Keibler2021_observed_exchange_directions.csv", stringsAsFactors = FALSE)
+cancer_directions <- read.csv("datasets_and_models/treated/cancer/metabolomics/Jain2012_NCI60_observed_exchange_directions.csv", stringsAsFactors = FALSE)
+
+selected_healthy_condition <- "EV_EGF5" # Change to EV_EGF0 to inspect the EGF-free scenario.
+healthy_composition <- rbind(
+  subset(healthy_medium, condition_id == "shared_base"),
+  subset(healthy_medium, condition_id == selected_healthy_condition)
+)
+special_antibody <- subset(healthy_medium, condition_id == "EGF0_antiEGFR_special")
+
+# These are composition-annotated scenario objects, not set_medium() inputs.
+# Numeric FBA bounds stay unset until separately justified and reviewed.
+healthy_scenario <- list(id = paste0("184A1_", selected_healthy_condition),
+  ingredients = healthy_composition, bounds = NULL, status = "composition only; bounds not approved")
+cancer_scenario <- list(id = "NCI60_CORE", ingredients = cancer_medium,
+  bounds = NULL, status = "composition only; bounds not approved")
+
+healthy_composition[, c("condition_id", "component", "reported_amount", "reported_unit", "availability_or_role")]
+special_antibody[, c("condition_id", "component", "reported_amount", "reported_unit", "availability_or_role")]
+cancer_medium[, c("condition_id", "component", "reported_amount", "reported_unit", "availability_or_role")]
+conversion_scenarios[, c("assumption_id", "cell_context", "protein_per_cell_pg", "protein_fraction_dry_mass", "dry_mass_per_cell_pg", "status", "limitations")]
+data.frame(scenario = c(healthy_scenario$id, cancer_scenario$id),
+  ingredient_rows = c(nrow(healthy_scenario$ingredients), nrow(cancer_scenario$ingredients)),
+  status = c(healthy_scenario$status, cancer_scenario$status))
+
+# Growth-rate entries are in the source workbook, although its rate_unit field
+# does not state a unit. Trial 2's condition labels were inferred from row order.
+keibler_growth <- subset(keibler_observations,
+  metabolite_or_process == "Growth Rate" & condition == "EV" & dose_as_reported == 5)
+keibler_growth[, c("trial", "condition", "condition_label_inferred", "dose_as_reported", "replicate", "observed_rate", "rate_unit")]
+keibler_growth_design[, c("cell_context", "condition", "egf_ng_per_mL", "seeded_cells_per_6well_min", "seeded_cells_per_6well_max", "flux_interval_h", "flux_start_absolute_cell_count_available")]
+grep("glc|gln|pyr", hands_on$exchange_ids, value = TRUE)
+```
+
+Starting medium concentration and exposure time alone give a finite **volume-normalized average inventory ceiling** if we assume all of the nutrient is consumed. For example, Keibler medium starts with 10 mM glucose and 4 mM glutamine and uses a 48 h exchange interval. The first calculation below is in mM/h (or mmol/well/h), **not per gDW**, and does not use growth rate:
+
+```{r}
+#| label: calculate-volume-normalized-availability-cap
+interval_h <- 48
+available <- subset(healthy_composition, component %in% c("D-glucose", "L-glutamine"))
+availability_caps <- data.frame(
+  metabolite = available$component,
+  starting_concentration_mM = as.numeric(available$reported_amount),
+  assumed_complete_depletion_cap_mM_per_h = as.numeric(available$reported_amount) / interval_h,
+  uptake_lower_mM_per_h = -as.numeric(available$reported_amount) / interval_h,
+  uptake_upper_mM_per_h = 0,
+  well_volume_L = 2.4 / 1000,
+  assumed_amount_cap_mmol_per_h = as.numeric(available$reported_amount) * (2.4 / 1000) / interval_h,
+  uptake_lower_mmol_per_h = -as.numeric(available$reported_amount) * (2.4 / 1000) / interval_h,
+  uptake_upper_mmol_per_h = 0,
+  assumption = "assumed constraint: all initially available glucose/glutamine consumed uniformly over 48 h; no secretion for these nutrients; not observed uptake"
+)
+availability_caps
+```
+
+This is an explicit, assumption-based constraint that we impose on the model from the measured starting inventory and the chosen 48 h interval. It applies only to the selected glucose and glutamine rows above; it does **not** mean that all metabolites in the medium are consumed. The calculation assumes that these nutrients could be completely depleted and converts that inventory into an average uptake ceiling. It is not a measured uptake rate. Lactate must be treated separately: if cells secrete L-lactate, that observation can motivate a secretion-permitted or secretion-favored scenario, but it does not make lactate subject to this complete-depletion/no-secretion assumption. Exchange stoichiometry and condition-specific bounds must be checked before imposing any direction on lactate or another metabolite.
+
+For a `-1` extracellular exchange, this illustration gives a finite lower bound on average uptake: glucose `-0.2083 mM/h` (or `-0.0005 mmol/well/h`) and glutamine `-0.0833 mM/h` (or `-0.0002 mmol/well/h`). Setting the upper bound to zero additionally assumes one-way uptake/no secretion; medium availability alone does not imply that. Store these derived inventory caps with the healthy scenario, but do not put them in the model's `bounds` table until converted to mmol/gDW/h using culture biomass-time.
+
+To convert finite well inventory into a biomass-specific Recon1 uptake ceiling, divide the total nutrient inventory by the biomass-time accumulated over the interval:
+
+$$B(t)=B_0e^{\mu t},\qquad \int_0^T B(t)\,dt=B_0\frac{e^{\mu T}-1}{\mu},\qquad q_{max}=\frac{C_0V}{\int_0^T B(t)\,dt}.$$
+
+Here $C_0$ is in mmol/L, $V$ in L, $B_0$ in gDW, and $\mu$ in h$^{-1}$, so $q_{max}$ is mmol/gDW/h. During balanced exponential growth we treat this **specific** uptake rate, per gDW, as approximately constant. The corresponding whole-well uptake is $Q(t)=qB(t)$ and increases with biomass; intracellular steady state $S\mathbf{v}=0$ does not require whole-culture uptake to remain constant. For a `-1` exchange with one-way uptake, the resulting interval is $[-q_{max},0]$. The growth-rate values are reported numerically in the Keibler workbook, with the hour unit inferred from the study's exponential-growth formulation. A starting cell amount is needed to calculate the finite-inventory cap per gDW; the relative cell-count growth rate itself can be estimated from a count ratio without knowing the absolute starting count.
+
+```{r}
+#| label: growth-adjusted-cap-function
+growth_adjusted_cap <- function(starting_concentration_mM, culture_volume_L,
+                                growth_rate_per_h, interval_h, initial_biomass_gDW) {
+  biomass_time_gDW_h <- if (abs(growth_rate_per_h) < 1e-10) {
+    initial_biomass_gDW * interval_h
+  } else {
+    initial_biomass_gDW * expm1(growth_rate_per_h * interval_h) / growth_rate_per_h
+  }
+  starting_concentration_mM * culture_volume_L / biomass_time_gDW_h
+}
+
+# Use only after providing a condition-specific starting biomass.
+# q_glucose <- growth_adjusted_cap(10, 2.4 / 1000, mu, 48, initial_biomass_gDW)
+```
+
+The next chunk turns the plating count into a biomass-time estimate for the final 48 h nutrient interval. It uses the reported growth data and the stated cell-mass conversion:
+
+1. Start with the reported EV +5 ng/mL plating count (`62,500` cells/well).
+2. Propagate that count for approximately 72 h before the final medium reset (`24 h` in MCDB170 plus `48 h` in experimental medium). This uses each trial's mean reported growth-rate value as if it were constant throughout all 72 h.
+3. Treat the source value as h$^{-1}$, although its unit is not stated in the workbook.
+4. Convert the estimated reset-time cell count to gDW using the generic `333.3 pgDW/cell` sensitivity assumption.
+5. Assume that all initially available glucose or glutamine is consumed during the **final 48 h**, with no secretion of those nutrients. The function then divides each nutrient's available amount by the estimated biomass-time during that final interval to obtain a hypothetical per-gDW uptake ceiling.
+
+`estimated_cells_at_reset` and `assumed_biomass_at_reset_gDW` are intermediate estimates. The glucose and glutamine results are biomass-specific upper limits obtained by dividing the finite nutrient inventory by estimated biomass-time. They constrain uptake only; the exchange bounds keep lactate secretion separate. Trial 2 labels were inferred from row order, so the two trial rows are shown separately.
+
+```{r}
+#| label: illustrative-growth-adjusted-cap
+mu_by_trial <- aggregate(observed_rate ~ trial, data = keibler_growth, FUN = mean)
+seeded_cells <- 62500
+pre_flux_h <- 24 + 48
+flux_interval_h <- 48
+dry_mass_per_cell_g <- 333.333333 * 1e-12
+well_volume_L <- 2.4 / 1000
+
+illustrative_caps <- do.call(rbind, lapply(seq_len(nrow(mu_by_trial)), function(i) {
+  mu <- mu_by_trial$observed_rate[[i]]
+  cells_at_reset <- seeded_cells * exp(mu * pre_flux_h)
+  biomass_at_reset_gDW <- cells_at_reset * dry_mass_per_cell_g
+  data.frame(
+    trial = mu_by_trial$trial[[i]],
+    condition_label_inferred = any(keibler_growth$condition_label_inferred[keibler_growth$trial == mu_by_trial$trial[[i]]] == "True"),
+    mu_as_reported = mu,
+    estimated_cells_at_reset = cells_at_reset,
+    assumed_biomass_at_reset_gDW = biomass_at_reset_gDW,
+    glucose_cap_mmol_per_gDW_h = growth_adjusted_cap(10, well_volume_L, mu, flux_interval_h, biomass_at_reset_gDW),
+    glutamine_cap_mmol_per_gDW_h = growth_adjusted_cap(4, well_volume_L, mu, flux_interval_h, biomass_at_reset_gDW),
+    assumptions = "illustrative constraint: same reported mu over 72 h; 333.3 pgDW/cell; glucose/glutamine full depletion during final 48 h; no secretion for these nutrients"
+  )
+}))
+illustrative_caps
+```
+
+Compare these illustrative per-gDW ceilings with the volume-normalized ceilings above. Identify which assumptions dominate the change. Do not copy this table into `medium_bounds.csv` as experimental measurements.
+
+```{r}
+#| label: attach-inventory-caps-to-scenario
+healthy_scenario$availability_caps <- availability_caps
+healthy_scenario$status <- "composition plus volume-normalized availability caps; Recon1-unit bounds not assigned"
+healthy_scenario$availability_caps
+```
+
+```{r}
+#| label: inspect-direction-inventories
+healthy_directions[, c("exchange_reaction_id", "metabolite", "observations", "uptake_observations", "secretion_observations", "direction_across_assayed_conditions")]
+cancer_directions[, c("exchange_reaction_id", "metabolite", "observations", "uptake_observations", "secretion_observations", "zero_observations", "direction_across_NCI60_observations")]
+keibler_growth_design[, c("cell_context", "condition", "egf_ng_per_mL", "seeded_cells_per_6well_min", "seeded_cells_per_6well_max", "flux_interval_h", "flux_start_absolute_cell_count_available")]
+```
+
+**Tasks:**
+
+1. Choose which Keibler EGF condition you are describing; keep the anti-EGFR condition separate because it was used only in selected experiments.
+2. Identify the defined small nutrients, the complex ingredients (for example, FBS or bovine pituitary extract), and growth/signaling supplements. Do not invent exchange mappings for complex ingredients.
+3. Use the candidate exchange IDs printed above to map glucose and glutamine, then inspect their extracellular stoichiometric signs in section 2. Record mappings only after checking the model.
+4. Inspect the displayed Keibler 5 ng/mL EV growth-rate replicates. Compare Trial 1 and Trial 2 summaries; flag that Trial 2's condition label was inferred, and that the workbook does not specify the growth-rate unit. The paper's formula supports interpreting a rate per hour only if its time input is in hours.
+5. Keibler Fig. 1b shows protein per cell varies with growth rate. For a simplified calculation within one selected condition, state the assumption that it is approximately constant during the measurement interval; explain why this gives a cell-number growth proxy but neither supports a constant across conditions nor converts rates to gDW.
+6. Compare the volume-normalized caps with the growth-adjusted, biomass-specific caps. Explain how the measured growth trajectory and the stated cell-mass conversion provide biomass-time, and why the cap is a constant specific-rate ceiling during exponential growth rather than a constant whole-well consumption rate. Keep spent measurements available for comparison after the FBA prediction.
+7. Use the observed-direction tables to identify metabolites with uptake only, secretion only, or both across the measured records. Explain why pooled observed signs do not establish a metabolite's feasible directions in every cell model or numeric flux bounds.
+8. Check the seeding/timeline table. The reported plated-cell densities are before about 24 h in MCDB170 and 48 h in experimental medium; the final flux interval starts after that, at fresh-medium replacement. Explain why the plating count is not $B_0$ for the final 48 h growth-adjusted cap. The prepared data do not include an absolute cell count at that reset.
+9. Review the explicitly assumption-based worked example. Explain why extrapolating the final-condition growth rate across both pre-reset phases is a convenience assumption, not an experimentally observed reset-time cell count.
+The earlier chunks build composition and cap tables; Section 5 turns the selected Keibler cap and mapped DMEM exchanges into a complete `bounds` table, applies it with `set_medium()`, and runs the biomass objective with `solve_fba()`. Section 6 reports the actual solver and mass-balance checks. The Trial 1/Trial 2 difference illustrates how the growth trajectory changes the biomass-specific nutrient ceiling.
+
+## 5. Build the Keibler condition medium and run FBA
+
+This required chunk creates a finite exchange-bound table for the selected Keibler 184A1 EV +5 ng/mL EGF condition. Every defined medium component is capped with the same growth-adjusted, complete-depletion calculation used above: glucose (10 mM) and glutamine (4 mM) as reported by Keibler, and the amino acids, vitamins, and salts at the concentrations of the standard DMEM reference formulation in [medium_reference_formulations.csv](../config/medium_reference_formulations.csv) (the exact catalog product is unverified). Components absent from standard DMEM (asparagine, aspartate, glutamate, proline, biotin, ammonium, ferrous iron) get zero uptake. O2, CO2, H2O, and H+ exchange with the gas phase or buffer rather than a finite inventory, so they keep an explicit 10 mmol/gDW/h uptake setting. Listed exchanges may also **secrete** (upper bound 1000), except glucose and glutamine, where no secretion is part of the complete-depletion assumption. Forbidding secretion of CO2, H2O, and H+ would block both respiration and lactate/H+ export. Unlisted exchange uptake is closed while secretion remains possible. None of these caps is a claim that a nutrient is consumed at that rate.
+
+```{r}
+#| label: run-keibler-condition-fba
+dmem_exchange_ids <- c(
+  "R_EX_glc__D_e", "R_EX_gln__L_e", "R_EX_o2_e", "R_EX_co2_e", "R_EX_h2o_e",
+  "R_EX_h_e", "R_EX_nh4_e", "R_EX_na1_e", "R_EX_k_e", "R_EX_cl_e",
+  "R_EX_ca2_e", "R_EX_pi_e", "R_EX_so4_e", "R_EX_fe2_e", "R_EX_fe3_e",
+  "R_EX_hco3_e", "R_EX_arg__L_e", "R_EX_asn__L_e", "R_EX_asp__L_e",
+  "R_EX_cysi__L_e", "R_EX_glu__L_e", "R_EX_gly_e", "R_EX_his__L_e",
+  "R_EX_ile__L_e", "R_EX_leu__L_e", "R_EX_lys__L_e", "R_EX_met__L_e",
+  "R_EX_phe__L_e", "R_EX_pro__L_e", "R_EX_ser__L_e", "R_EX_thr__L_e",
+  "R_EX_trp__L_e", "R_EX_tyr__L_e", "R_EX_val__L_e", "R_EX_btn_e",
+  "R_EX_fol_e", "R_EX_ribflv_e", "R_EX_thm_e", "R_EX_pnto__R_e",
+  "R_EX_pydx_e", "R_EX_inost_e", "R_EX_chol_e"
+)
+if (!all(dmem_exchange_ids %in% hands_on$exchange_ids)) {
+  stop("A selected DMEM component is not an exchange in the hands-on model.")
+}
+
+trial1_cap <- subset(illustrative_caps, trial == "Trial 1")
+stopifnot(nrow(trial1_cap) == 1L)
+formulations <- read.csv("config/medium_reference_formulations.csv", stringsAsFactors = FALSE)
+dmem_inventory <- subset(formulations, formulation_id == "Keibler2021_184A1_DMEM")
+stopifnot(nrow(dmem_inventory) == 38L, !anyDuplicated(dmem_inventory$reaction_id),
+          all(dmem_inventory$reaction_id %in% dmem_exchange_ids))
+trial1_mu <- trial1_cap$mu_as_reported
+trial1_biomass_gDW <- trial1_cap$assumed_biomass_at_reset_gDW
+inventory_caps <- growth_adjusted_cap(dmem_inventory$concentration_mM, well_volume_L,
+  trial1_mu, flux_interval_h, trial1_biomass_gDW)
+
+# O2, CO2, H2O and H+ exchange with the gas phase/buffer and are not finite-inventory nutrients.
+keibler_medium_bounds <- data.frame(
+  reaction_id = dmem_exchange_ids,
+  lower_bound = -10,
+  upper_bound = 1000,
+  rationale = "gas/solvent exchange; finite exercise uptake capacity; secretion allowed",
+  stringsAsFactors = FALSE
+)
+inventory_row <- match(dmem_inventory$reaction_id, keibler_medium_bounds$reaction_id)
+keibler_medium_bounds$lower_bound[inventory_row] <- -inventory_caps
+keibler_medium_bounds$rationale[inventory_row] <- ifelse(dmem_inventory$concentration_mM == 0,
+  paste(dmem_inventory$component, "absent from formulation; uptake closed; secretion allowed"),
+  paste0(dmem_inventory$component, " ", signif(dmem_inventory$concentration_mM, 4),
+    " mM; Trial 1 growth-adjusted complete-depletion ceiling; secretion allowed"))
+one_way <- keibler_medium_bounds$reaction_id %in% c("R_EX_glc__D_e", "R_EX_gln__L_e")
+keibler_medium_bounds$upper_bound[one_way] <- 0
+keibler_medium_bounds$rationale[keibler_medium_bounds$reaction_id == "R_EX_glc__D_e"] <-
+  "Keibler 10 mM starting inventory; Trial 1 growth-adjusted complete-depletion ceiling"
+keibler_medium_bounds$rationale[keibler_medium_bounds$reaction_id == "R_EX_gln__L_e"] <-
+  "Keibler 4 mM starting inventory; Trial 1 growth-adjusted complete-depletion ceiling"
+stopifnot(abs(-keibler_medium_bounds$lower_bound[keibler_medium_bounds$reaction_id == "R_EX_glc__D_e"] -
+  trial1_cap$glucose_cap_mmol_per_gDW_h) < 1e-9)
+
+keibler_medium <- list(
+  id = "Keibler_184A1_EV_EGF5_growth_adjusted_v2",
+  source = "Keibler et al. 2021 supplemented DMEM (glucose 10 mM, glutamine 4 mM) plus standard DMEM reference formulation; every defined component capped by the Trial 1 complete-depletion calculation; O2/CO2/H2O/H+ at 10 mmol/gDW/h; secretion allowed except glucose/glutamine",
+  bounds = keibler_medium_bounds
+)
+
+# Replace the source's very large finite placeholder limits on a working copy;
+# this numerical cap is nonbinding for ordinary internal reaction fluxes here.
+fba_model <- hands_on
+fba_model$lb <- pmax(fba_model$lb, -1000)
+fba_model$ub <- pmin(fba_model$ub, 1000)
+# Reload the shared helper so an R session with an older solve_fba() definition
+# cannot silently use the pre-scaling LP implementation.
+source(file.path(project_root, "R/model_io.R"))
+keibler_condition_model <- set_medium(fba_model, keibler_medium)
+keibler_fba <- solve_fba(keibler_condition_model)
+if (keibler_fba$status != "optimal") {
+  solver_detail <- if (is.null(keibler_fba$error)) "no additional solver detail" else keibler_fba$error
+  stop(sprintf(
+    "Keibler FBA did not solve optimally (status=%s; detail=%s). Re-run the worksheet from the exercises project root so the current shared solver is loaded.",
+    keibler_fba$status, solver_detail
+  ))
+}
+stopifnot(keibler_fba$objective_value > 0,
+          keibler_fba$max_abs_sv < 1e-7)
+```
+
+## 6. Check and interpret the FBA result
+
+```{r}
+#| label: report-keibler-fba-qc
+keibler_fba_summary <- data.frame(
+  condition = keibler_medium$id,
+  medium_source = keibler_medium$source,
+  objective_id = keibler_fba$objective_id,
+  solver_status = keibler_fba$status,
+  biomass_objective_value = keibler_fba$objective_value,
+  glucose_exchange = keibler_fba$fluxes[["R_EX_glc__D_e"]],
+  glutamine_exchange = keibler_fba$fluxes[["R_EX_gln__L_e"]],
+  lactate_exchange = keibler_fba$fluxes[["R_EX_lac__L_e"]],
+  max_abs_Sv = keibler_fba$max_abs_sv,
+  flux_unit = hands_on$flux_unit,
+  stringsAsFactors = FALSE
+)
+keibler_fba_summary
+```
+
+Read exchange signs using the coefficient table in Section 2. For these `-1` exchanges, negative values indicate uptake and positive values indicate secretion. The objective is the maximum biomass flux allowed by this network, objective, and medium; the residual checks the steady-state balances. In balanced exponential growth, the specific exchange rates (per gDW) can be approximately constant even though total well uptake increases with biomass. A single FBA solution is one optimum; alternative flux vectors may attain the same biomass objective.
+
+**Required interpretation:** Is the solver status optimal? Is the biomass objective positive? Is the residual below tolerance? Which nutrients are taken up in this solution? Does the optimizer choose lactate secretion, and what does that tell you about an allowed direction versus a forced direction? Explain which exchange limits come from the Keibler inventory calculation and which use the stated finite uptake-capacity setting.
+
+## 7. Handoff to expression-specific contexts
+
+Exercise 1 creates and solves a Keibler 184A1 condition-specific WT model. Exercise 2 applies expression evidence to context models and must take an explicit medium as input. The available healthy expression profile is GTEx breast tissue, while the Keibler medium is for cultured 184A1 HMEC; the cancer expression profile is MCF7, while the Jain medium is for the multi-lineage NCI-60 CORE experiment. These are distinct biological contexts, not matched healthy/cancer pairs. Exercise 2 should therefore retain both medium assignments as named condition scenarios and, when comparing expression effects, also compare models under a shared medium so that expression and medium effects are not silently conflated.
+
+**Exit questions:**
+
+1. Explain the roles of stoichiometry, bounds, and objective in $S\mathbf{v}=0$ FBA.
+2. Distinguish a positive optimal biomass objective from an experimentally observed growth rate.
+3. Explain why steady-state intracellular balances are compatible with increasing total culture uptake during exponential growth.
+4. State how the selected medium and exchange bounds enter the context-specific modeling in Exercise 2.

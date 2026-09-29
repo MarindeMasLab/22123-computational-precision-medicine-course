@@ -1,0 +1,22 @@
+# Exercise 2 primary shared-medium comparison; versioned instructor-run settings.
+id: session5_imat_recon1_v1
+algorithm: signed_flux_iMAT_like_MILP
+solver: highs
+solver_version: 1.14.0.2
+solver_engine_version: 1.14.0
+epsilon: 0.1
+epsilon_unit: mmol_per_gDW_per_hr
+growth_fraction: 0.9
+flux_bound_cap: 1000
+time_limit_seconds: 300
+threads: 2
+high_weight: 1
+low_weight: 1
+unknown_evidence: neutral
+intermediate_evidence: neutral
+high_evidence: reward_active_signed_flux
+low_evidence: reward_inactive_flux
+reversible_reactions: signed_net_flux_with_positive_or_negative_activity_indicators
+objective_id: obj_biomass
+objective_reaction: R_biomass_reaction
+objective_sense: maximize

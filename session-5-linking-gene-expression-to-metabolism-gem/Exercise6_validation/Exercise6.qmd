@@ -1,0 +1,116 @@
+---
+title: "Exercise 6 — Independent reconstruction assessment with extracellular rates"
+subtitle: "Student worksheet | 35 minutes"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Learning goal
+
+Assess an expression-only reconstruction against independent Jain exchange directions without comparing incompatible absolute units. The primary procedure is **grouped leave-one-exchange-out cross-validation (LOOCV) of a direction classifier built from GEM features**. The canonical reconstruction itself remains a fixed, untuned mechanistic baseline.
+
+## 1. Preflight and isolation audit
+
+Run this from the `exercises/` directory. The workflow rejects unsuffixed or provenance-mismatched contexts and checks that the canonical MCF7 and GTEx WT solves are optimal, positive, and residual-valid.
+
+```{r}
+source("R/exercise6_workflow.R")
+result <- exercise6_run("..")
+result$preflight$preflight
+```
+
+**Run this:** inspect the preflight table and the RDS/FVA provenance fields.
+
+**Expected result:** the source model hash is consistent, the MCF7 scenario is `MCF7_ACH_000019_Jain`, the objective is `obj_biomass` with maximization, and Jain measurements are absent from reconstruction and medium provenance.
+
+**Interpretation:** MCF7 DepMap expression uses an assumption-based RPMI proxy; GTEx breast uses a Keibler/DMEM proxy. These are unmatched source contexts, not tumor/normal validation.
+
+## 2. Isolate eligible observations
+
+```{r}
+obs <- result$observations$observations
+data.frame(source_rows = nrow(obs), source_row_ids = length(unique(obs$source_row_id)),
+  exchange_groups = length(unique(obs$normalized_exchange_id)),
+  units = paste(unique(obs$rate_unit), collapse = ";"))
+table(obs$observed_group_direction)
+head(obs[, c("source_row_id", "replicate", "method", "metabolite", "rate_in_cobra_exchange_sign", "normalized_exchange_id", "observed_group_direction")])
+```
+
+**Run this:** verify both Jain replicates remain present and that `source_row_id` is unique.
+
+**Expected result:** 86 MCF7 rows form 43 exchange groups. Jain values remain in `fmol/cell/h`; negative COBRA-sign values mean uptake and positive values mean secretion.
+
+**Interpretation:** no cells-to-gDW conversion is available, so this exercise evaluates direction only. Discordant or near-zero replicate groups remain `near_zero_or_ambiguous`.
+
+## 3. Fixed expression-only baseline
+
+```{r}
+result$classification[, c("exchange_reaction_id", "observed_group_direction", "fba_flux",
+  "fva_minimum", "fva_maximum", "model_allowed_direction", "fixed_model_category")]
+result$coverage
+```
+
+**Run this:** inspect the FVA interval and status before reading any LOOCV score.
+
+**Expected result:** all 43 eligible MCF7 Jain exchange groups are supported by fresh full-panel FVA. Model fluxes are in `mmol/gDW/h`, and FVA intervals are model allowance, not measured-rate predictions.
+
+## 4. Understand one grouped fold
+
+```{r}
+result$folds[1, ]
+result$folds[result$folds$scoreable, ][1, ]
+utils::read.csv("outputs/grouped_loocv_fold_assignments.csv")[1, ]
+```
+
+**Run this:** compare the held-out exchange and its source-row IDs with the training exchange IDs.
+
+**Expected result:** every replicate for one exchange is held out together; no held-out source row, exchange ID, analyte, method, or replicate appears in training. Scaling and centroids are fitted on training groups only.
+
+## 5. Run grouped LOOCV and compare baselines
+
+```{r}
+result$metrics
+table(result$folds$scoreable, result$folds$unscored_reason, useNA = "ifany")
+utils::read.csv("outputs/loocv_confusion_matrix.csv")
+```
+
+**Run this:** report the scoreable denominator, ambiguous held-out folds, unsupported folds, and failed folds separately.
+
+**Expected result:** 43 outer exchange groups are retained; 40 folds are scoreable and 3 are ambiguous because of held-out replicate labels. The fold-trained classifier and training-fold majority baseline use only scoreable held-out groups for metrics.
+
+**Interpretation:** this is LOOCV of a direction classifier built from GEM features. It is not LOOCV of the expression reconstruction, and it is not absolute-rate validation. A majority baseline is recomputed inside each training fold.
+
+## 6. Compare model accuracy and confusion matrices
+
+```{r}
+utils::read.csv("outputs/model_accuracy_summary.csv")
+utils::read.csv("outputs/mcf7_jain_confusion_matrix.csv")
+utils::read.csv("outputs/gtex_keibler_confusion_matrix.csv")
+knitr::include_graphics("outputs/model_confusion_matrices.png")
+```
+
+**Expected result:** MCF7/Jain accuracy is **35/40 = 87.5%**; GTEx/Keibler accuracy is **9/10 = 90.0%**. Three MCF7 groups and eight GTEx groups are ambiguous and excluded from their respective accuracy denominators.
+
+**Interpretation:** these are grouped LOOCV accuracies for direction classifiers built from model-derived features. They are not absolute-flux accuracy or clinical/model validity claims.
+
+## 7. Inspect figures and limitations
+
+```{r}
+knitr::include_graphics("outputs/measured_direction_vs_model_allowed.png")
+knitr::include_graphics("outputs/coverage_status.png")
+knitr::include_graphics("outputs/loocv_predictions_observed.png")
+```
+
+The plots retain ambiguous and unscored states. The GTEx/Keibler assessment uses all 900 mapped Keibler rows across 18 exchange groups, but its source units are unstated and its tissue/culture sources are unmatched. Do not use Exercise 4 KO or Exercise 5 pair-screen outcomes as validation evidence; they remain downstream model hypotheses. Do not claim matched normal validation, tumor specificity, clinical utility, correlation, or absolute-rate agreement.
+
+## Submission
+
+Submit the generated `Exercise6_validation/outputs/` tables and figures, the scoreable denominator and coverage counts, and a short interpretation that names the validated procedure precisely: **LOOCV of a direction classifier built from GEM features**, with a fixed expression-only FBA/FVA assessment as the untuned baseline.

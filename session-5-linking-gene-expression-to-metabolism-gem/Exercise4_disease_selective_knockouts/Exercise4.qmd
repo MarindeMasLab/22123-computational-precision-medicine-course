@@ -1,0 +1,273 @@
+---
+title: "Exercise 4 — Disease-selective single-gene knockouts"
+subtitle: "Student worksheet | native full-gene KO census + synthetic GPR control"
+format:
+  html:
+    toc: true
+    toc-location: right
+    toc-depth: 2
+    css: ../course_toc.css
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Learning goals and scope
+
+Explain Boolean GPR knockouts, independently restored wild-type (WT) models, solver statuses and $r_{g,c}=\mu_{g,c}/\mu_{\mathrm{WT},c}$. A KO ratio is numeric **only** for a positive optimal WT and interpretable optimal KO with acceptable mass-balance residual. Infeasible/time-limited/error results remain unclassified, not zero.
+
+The two canonical Exercise 2 models exist and can be solved, but their native media **differ**: MCF7 uses an assumption-based RPMI recipe proxy; GTEx breast uses the Keibler/DMEM proxy. They are not matched samples; WT differences combine expression and medium effects. The full model-gene census below is **exploratory computational screening, not an instructor-validated biological dependency panel**. Exercise 3's measured exchanges and pathway maps are context, not KO evidence. The synthetic screen remains a software test, not cancer evidence.
+
+## 1. Verify authoritative contexts (5 minutes)
+
+Run from the exercises project root or this folder. The preflight checks the two canonical `_Jain`/`_Keibler` RDS files (not older unsuffixed files), XML existence, QC, source/input/config hashes, common biomass objective, HiGHS/iMAT statuses, effective bounds, and fresh context-specific WT FBA. The exported XML contains scenario bounds; the RDS retains post-iMAT constraints.
+
+```{r}
+#| label: ex4-student-setup
+project_root <- c(".", "..")
+project_root <- project_root[file.exists(file.path(project_root, "R/model_io.R"))][1]
+if (is.na(project_root)) stop("Open from exercises/ or the Exercise 4 folder.")
+setwd(project_root)
+knitr::opts_knit$set(root.dir = normalizePath("."))
+source("R/model_io.R")
+source("R/ko_workflow.R")
+output_dir <- "Exercise4_disease_selective_knockouts/outputs"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+verified <- ko_context_preflight()
+stopifnot(all(file.exists(file.path("Exercise2_expression_integration/outputs",
+  paste0("context_", names(verified$contexts), ".xml")))))
+utils::write.csv(verified$qc, file.path(output_dir, "native_wt_qc.csv"), row.names = FALSE)
+verified$qc[, c("context", "medium_id", "objective_id", "milp_status",
+  "wt_status", "wt_objective", "wt_max_abs_sv", "solver", "source_model_sha256")]
+```
+
+**Check:** Is $\mu_{\mathrm{WT}}$ positive in both scenarios? Are the medium IDs identical? A negative exchange flux denotes uptake for the verified Recon1 exchange orientation; neither FBA nor FVA is a measured flux. Jain observations are in fmol/cell/h; Keibler workbook rates have no stated source unit. Exercise 3 holds these observations out of the bounds and compares directions only.
+
+## 2. Audit a proposed panel before screening (4 minutes)
+
+A real instructor shortlist must supply exact Recon1 gene-product IDs, **per-gene** source and rationale, reviewed evidence, and a GPR coverage report. Being a model gene, having an expression value, mapping to a pathway, or appearing in Exercise 3 is not biological dependency validation. No such reviewed 8–15-gene panel is archived; the native shortlist is deliberately empty. The audit preserves missing/uncovered genes with explicit reasons when a shortlist is supplied. An empty candidate set is legitimate.
+
+```{r}
+#| label: ex4-student-native-panel-gate
+instructor_shortlist <- data.frame(gene_id = character(), source = character(), rationale = character())
+native_audit <- ko_panel_audit(verified$contexts[[1L]]$model, instructor_shortlist)
+utils::write.csv(native_audit, file.path(output_dir, "native_panel_audit_pending.csv"), row.names = FALSE)
+stopifnot(nrow(native_audit) == 0L)
+native_audit
+```
+
+**For an instructor-validated panel later:** `ko_screen(verified$contexts, reviewed_shortlist, approved = TRUE)` independently solves each WT and each gene/context KO. Without review, this *panel* function refuses screening. The later section instead uses `ko_full_census()` to test every model gene as an explicitly exploratory computation, not a validated shortlist. Never pass a previous KO as WT. For expression-only comparisons an additional same-medium reconstruction is required; native ratios cannot isolate expression effects.
+
+## 3. Software-only Boolean GPR demonstration (12 minutes)
+
+The toy has two parallel transport routes to one precursor: `T_toy_1` needs `G_A`, `T_toy_2` needs `G_A or G_B`, and biomass needs `G_C`. Both contexts inherit **identical stoichiometry and GPRs**. The healthy toy retains both routes; in the disease toy, `G_A` is explicitly unavailable and the upper route has already been closed in WT. This is an invented Boolean teaching condition, **not** a deduction from Exercise 2's continuous gene evidence or a real breast-cell measurement.
+
+```{r}
+#| label: ex4-student-synthetic-model
+S_toy <- Matrix::sparseMatrix(i = c(1, 1, 2, 1, 2, 2), j = c(1, 2, 2, 3, 3, 4),
+  x = c(-1, -1, 1, -1, 1, -1), dims = c(2, 4),
+  dimnames = list(c("toy_substrate_e", "toy_precursor_c"),
+    c("EX_toy_e", "T_toy_1", "T_toy_2", "BIOMASS_toy")))
+toy <- list(S = S_toy, lb = c(EX_toy_e = -5, T_toy_1 = 0, T_toy_2 = 0, BIOMASS_toy = 0),
+  ub = c(EX_toy_e = 0, T_toy_1 = 100, T_toy_2 = 100, BIOMASS_toy = 100),
+  objective = c(EX_toy_e = 0, T_toy_1 = 0, T_toy_2 = 0, BIOMASS_toy = 1),
+  objective_id = "toy_biomass", objective_sense = "maximize",
+  gpr = c(EX_toy_e = "", T_toy_1 = "G_A", T_toy_2 = "G_A or G_B", BIOMASS_toy = "G_C"),
+  reaction_ids = c("EX_toy_e", "T_toy_1", "T_toy_2", "BIOMASS_toy"),
+  metabolite_ids = c("toy_substrate_e", "toy_precursor_c"),
+  gene_ids = c("G_A", "G_B", "G_C"), exchange_ids = "EX_toy_e",
+  source_sha256 = "synthetic_only", medium_id = NA_character_, compartments = c(toy_substrate_e = "e", toy_precursor_c = "c"))
+class(toy) <- "session5_model"
+toy <- set_medium(toy, list(id = "synthetic_only", source = "artificial teaching network",
+  bounds = data.frame(reaction_id = "EX_toy_e", lower_bound = -5,
+    upper_bound = 0, rationale = "toy uptake")))
+toy_healthy <- toy
+toy_disease <- toy
+toy_disease$ub[["T_toy_1"]] <- 0 # contextual closure, not a changed GPR
+stopifnot(identical(toy_healthy$gpr, toy_disease$gpr), identical(toy_healthy$S, toy_disease$S))
+toy_contexts <- list(toy_healthy = list(model = toy_healthy),
+  toy_disease = list(model = toy_disease, unavailable_gene_ids = "G_A"))
+toy_shortlist <- data.frame(gene_id = c("G_A", "G_B", "G_C", "G_missing"),
+  source = rep("artificial software fixture", 4),
+  rationale = c("upper route", "lower route isozyme", "common biomass", "invalid ID exclusion"))
+toy_audit <- ko_panel_audit(toy, toy_shortlist)
+utils::write.csv(toy_audit, file.path(output_dir, "synthetic_gpr_audit.csv"), row.names = FALSE)
+toy_audit[, c("gene_id", "gpr_reactions", "coverage_count", "affected_reactions", "eligibility", "exclusion_reason")]
+```
+
+**Check:** The healthy upper route closes when `G_A` is deleted but the lower `G_B` route rescues growth. In disease WT, `G_A` is already unavailable, so removing it again does nothing; deleting `G_B` removes the only remaining route. `G_C` blocks biomass in both. `G_missing` is excluded, not modeled as resistant.
+
+```{r}
+#| label: ex4-student-synthetic-screen
+before <- serialize(toy, NULL)
+toy_rows <- ko_screen(toy_contexts, toy_shortlist, approved = TRUE) # approval is for the artificial fixture only
+stopifnot(identical(serialize(toy, NULL), before))
+utils::write.csv(toy_rows, file.path(output_dir, "synthetic_single_ko.csv"), row.names = FALSE)
+toy_candidates <- ko_selectivity(toy_rows, "toy_disease", "toy_healthy")
+stopifnot(nrow(toy_candidates) == 1L, identical(toy_candidates$gene_id, "G_B"))
+utils::write.csv(toy_candidates, file.path(output_dir, "synthetic_teaching_candidates.csv"), row.names = FALSE)
+toy_rows[, c("context", "gene_id", "affected_reactions", "eligibility", "ko_status",
+  "wt_objective", "ko_objective", "ko_max_abs_sv", "ratio_to_wt", "reason")]
+```
+
+The teaching cutoffs (disease `<0.10`, healthy `>=0.50`) identify **only synthetic `G_B`**. This is a property of the explicitly assumed toy gene availability, not a breast-cancer result or a clinical threshold. Each ratio uses its context's fresh WT; excluded/failed rows remain `NA`, never zero.
+
+## 4. Readable coverage table and complete ratio figure (6 minutes)
+
+The diagram shows both parallel transport routes, using the unchanged GPRs and each context's actual WT/KO bounds. Green means **available**, not necessarily carrying flux; grey X means **already closed in that context's WT**; red X means **newly closed by KO**. Both contexts use the same biomass objective. Exchange flux is negative for uptake with this `S` orientation.
+
+```{r}
+#| label: ex4-student-toy-network-diagram
+stopifnot(identical(knock_out_genes(toy_healthy, "G_A")$affected_reactions, "T_toy_1"),
+  length(knock_out_genes(toy_disease, "G_A", unavailable_gene_ids = "G_A")$affected_reactions) == 0L,
+  identical(knock_out_genes(toy_disease, "G_B", unavailable_gene_ids = "G_A")$affected_reactions, "T_toy_2"),
+  toy_rows$ratio_to_wt[toy_rows$context == "toy_disease" & toy_rows$gene_id == "G_B"] == 0,
+  toy_rows$ratio_to_wt[toy_rows$context == "toy_healthy" & toy_rows$gene_id == "G_B"] == 1)
+plot_toy_ko_network(toy_healthy, toy_disease,
+  file.path(output_dir, "synthetic_ko_network_states.png"))
+```
+
+![The toy exchange, transport and biomass reactions in WT and three single-gene deletions. Green indicates an available reaction, not necessarily nonzero flux; red X indicates a closed reaction.](outputs/synthetic_ko_network_states.png)
+
+In healthy WT, both paths can supply precursor. `G_A` KO closes only the upper branch; `G_B` preserves the lower branch. In disease WT, the upper branch is already unavailable because `G_A` was assumed absent. `G_A` KO changes nothing, but `G_B` KO now closes the lower branch: growth falls to zero even though the `G_A or G_B` GPR **text never changes**. `G_C` closes biomass in either context. Each KO starts from its context WT; `G_missing` is excluded. The real Recon1 results do *not* assume binary `G_A` loss: their iMAT constraints and different media have separate provenance.
+
+The coverage audit below links every synthetic input gene to GPR rules and reactions whose bounds actually close. Save a paired ratio figure including the invalid ID (as an explicit excluded label). Horizontal guides show each context's WT ratio 1 and the two teaching thresholds.
+
+```{r}
+#| label: ex4-student-synthetic-coverage-plot
+png(file.path(output_dir, "synthetic_gpr_coverage.png"), width = 1100, height = 620, res = 140)
+barplot(toy_audit$coverage_count, names.arg = toy_audit$gene_id,
+  col = ifelse(toy_audit$eligibility == "excluded", "grey70", "steelblue"),
+  ylab = "Reactions with a GPR containing this gene", xlab = "Artificial gene",
+  main = "Synthetic GPR coverage (not dependency evidence)")
+dev.off()
+```
+
+![Synthetic GPR coverage; zero for the excluded identifier.](outputs/synthetic_gpr_coverage.png)
+
+```{r}
+#| label: ex4-student-synthetic-ratio-plot
+png(file.path(output_dir, "synthetic_paired_ko_ratios.png"), width = 1300, height = 720, res = 140)
+x <- seq_len(nrow(toy_audit)); plot(x, rep(NA_real_, length(x)), ylim = c(-0.26, 1.35),
+  xlim = c(0.6, length(x) + 0.4), xaxt = "n", xlab = "Every artificial gene in shortlist",
+  ylab = "KO / context-specific WT", main = "Synthetic KO ratios; not cancer/healthy evidence")
+axis(1, at = x, labels = toy_audit$gene_id)
+abline(h = 1, col = "black", lwd = 2); abline(h = c(0.10, 0.50), lty = 2, col = c("firebrick", "steelblue"))
+for (j in seq_along(toy_contexts)) {
+  t <- toy_rows[toy_rows$context == names(toy_contexts)[[j]], ]
+  positions <- match(t$gene_id, toy_audit$gene_id) + if (j == 1L) -0.1 else 0.1
+  good <- is.finite(t$ratio_to_wt)
+  points(positions[good], t$ratio_to_wt[good], pch = if (j == 1L) 16 else 17,
+    col = if (j == 1L) "firebrick" else "steelblue", cex = 1.4)
+  if (any(!good)) text(match(t$gene_id[!good], toy_audit$gene_id),
+    rep(if (j == 1L) -0.07 else -0.19, sum(!good)),
+    labels = paste(if (j == 1L) "H:" else "D:", t$ko_status[!good], "/ no ratio"), cex = 0.65)
+}
+  legend("topright", c("toy healthy", "toy disease", "WT baseline"),
+  pch = c(16, 17, NA), lty = c(NA, NA, 1), col = c("firebrick", "steelblue", "black"), bty = "n")
+dev.off()
+```
+
+![Synthetic paired KO ratios with both excluded statuses shown.](outputs/synthetic_paired_ko_ratios.png)
+
+## 5. Interpretation and exit questions (3 minutes)
+
+The synthetic KO results are not a biological panel or an Agent 5 biological single-KO control. The maps and flux figures from Exercise 3 contextualize these modeled pathways and held-out exchanges but do not validate gene dependencies.
+
+### Explore the full native-model census
+
+The instructor runs the long computation from the exercises root with the shared R workflow (the full screen is not recomputed on every worksheet render). The input to this section is the generated full-gene CSV, not a fabricated 8–15-gene validated panel. Every gene ID in the corrected Recon1 is represented in both contexts, including no-GPR and failed rows. Only rows marked computationally eligible have a numeric ratio. The `WT_reused_identical_bounds` method means the knockout left all model bounds unchanged; no LP was needed to demonstrate the same feasible set, **not** that the gene is biologically nonessential.
+
+```{r}
+#| label: ex4-student-full-census
+full_path <- file.path(output_dir, "native_full_gene_ko.csv")
+comparison_path <- file.path(output_dir, "native_full_gene_comparison.csv")
+if (!file.exists(full_path) || !file.exists(comparison_path))
+  stop("Run the documented full-screen R runner and complete its QC before using these tables.")
+full_ko <- utils::read.csv(full_path, stringsAsFactors = FALSE)
+contrasts <- utils::read.csv(comparison_path, stringsAsFactors = FALSE)
+stopifnot(nrow(full_ko) == 2L * length(verified$contexts[[1L]]$model$gene_ids),
+  nrow(contrasts) == length(verified$contexts[[1L]]$model$gene_ids),
+  setequal(full_ko$context, names(verified$contexts)),
+  all(full_ko$model_sha256 == verified$qc$source_model_sha256[[1L]]),
+  all(full_ko$objective_id == "obj_biomass"),
+  all(!is.na(full_ko$ratio_to_wt) | full_ko$eligibility == "unclassified"),
+  identical(as.character(contrasts$gene_id), as.character(verified$contexts[[1L]]$model$gene_ids)))
+for (id in names(verified$contexts)) {
+  t <- full_ko[full_ko$context == id, ]
+  q <- verified$qc[verified$qc$context == id, ]
+  stopifnot(nrow(t) == length(verified$contexts[[id]]$model$gene_ids),
+    all(t$context_rds_sha256 == q$context_rds_sha256),
+    all(t$settings_sha256 == q$settings_sha256),
+    all(t$medium_id == q$medium_id), all(abs(t$wt_objective - q$wt_objective) < 1e-6))
+}
+table(full_ko$context, full_ko$method)
+table(contrasts$classification)
+```
+
+```{r}
+#| label: ex4-student-all-genes-status
+methods <- c("HiGHS_KO_LP", "WT_reused_identical_bounds", "not_tested", "failed")
+palette <- c("#2d698c", "#64a573", "#b8b8b8", "#ce655b")
+status_grid <- sapply(names(verified$contexts), function(id) {
+  t <- full_ko[full_ko$context == id, ]
+  match(t$method[match(contrasts$gene_id, t$gene_id)], methods)
+})
+stopifnot(!anyNA(status_grid))
+png(file.path(output_dir, "native_full_ko_status_map.png"), width = 2400, height = 460, res = 150)
+par(mar = c(4, 16, 3, 2))
+image(seq_len(nrow(status_grid)), seq_len(ncol(status_grid)), status_grid,
+  col = palette, breaks = seq(0.5, length(methods) + 0.5, 1), axes = FALSE,
+  xlab = "All model gene-product IDs in source order; see CSV for exact IDs", ylab = "",
+  main = "Full native KO census: all gene statuses")
+axis(2, at = seq_len(ncol(status_grid)), labels = colnames(status_grid), las = 1, cex.axis = 0.7)
+legend("bottom", legend = methods, fill = palette, horiz = TRUE, bty = "n", inset = -0.1, xpd = TRUE, cex = 0.75)
+dev.off()
+```
+
+![Every gene-product ID in both native contexts, including no-GPR and failed rows.](outputs/native_full_ko_status_map.png)
+
+**Question:** How many model gene products have no GPR coverage, have an unchanged feasible bound set, or have an LP KO? Why is the status column essential when counting different outcomes?
+
+```{r}
+#| label: ex4-student-differential-genes
+different <- contrasts[contrasts$classification %in% c("MCF7_lower_teaching_cutoffs",
+  "GTEx_lower_teaching_cutoffs", "different_native_scenarios"), ]
+different <- different[order(-abs(different$delta_cancer_minus_healthy)), ]
+head(different[, c("gene_id", "cancer_ratio", "healthy_ratio", "delta_cancer_minus_healthy",
+  "classification", "cancer_changed_bounds", "healthy_changed_bounds")], 20L)
+different[, c("gene_id", "gene_symbol", "cancer_ratio", "healthy_ratio")]
+```
+
+In this saved native census, 13 exact model gene-product IDs differ by more than $10^{-6}$ in ratio, all with a higher ratio in MCF7 than GTEx/Keibler. The source-expression gene-symbol mapping (not a validation panel) labels them **ALDH18A1, DLD, ASL, ATP5I, ATP5B, ATP5L, NSF, FH, MTR, MTHFR, PHGDH, OTC, and OAT**. No gene has MCF7 ratio `<0.10` and GTEx ratio `>=0.50`; none is a validated disease-selective KO. Use the computed table for exact ID/ratio/reaction details rather than interpreting the symbol alone.
+
+![All numeric paired Recon1 KO ratios; excluded and failed gene counts are recorded separately in the CSV.](outputs/native_full_ko_ratios.png)
+
+**Interpretation:** Ratios divide each KO biomass by its own context WT. A difference between native scenarios **cannot** isolate an expression effect because their nutrient proxies differ. Cutoff guides (`<0.10` and `>=0.50`) are exploratory teaching labels, not validated selectivity or treatments. The CSVs retain every unclassified gene even when the scatter plot has no numeric point to draw.
+
+### Which model-based pathways are annotated to those different KOs?
+
+Use the Exercise 3 inferred Recon1-to-Human1 subsystem crosswalk. This is a grouping of *changed-bound reactions* for genes with different model responses. It does not report measured pathway flux or causal pathway enrichment; reactions without a mapping remain `Unassigned`.
+
+```{r}
+#| label: ex4-student-pathway-context
+detail <- utils::read.csv(file.path(output_dir, "native_differential_ko_reaction_subsystems.csv"),
+  stringsAsFactors = FALSE)
+pathways <- utils::read.csv(file.path(output_dir, "native_differential_ko_pathways.csv"),
+  stringsAsFactors = FALSE)
+stopifnot(all(detail$gene_id %in% different$gene_id),
+  all(detail$reaction_id %in% verified$contexts[[1L]]$model$reaction_ids))
+head(pathways[order(-pathways$genes), c("context", "subsystem", "genes", "affected_reactions")], 20L)
+```
+
+![Most frequent model-based subsystem annotations among differential KO-bound changes.](outputs/native_differential_ko_pathways.png)
+
+**Question:** Why can one gene appear under multiple subsystems, and why can `Unassigned` be common? Compare the coverage table to the ratio differences; a reaction's GPR appearance does not itself imply a biomass defect.
+
+The inferred reaction annotations among these 13 genes include oxidative phosphorylation (four gene IDs), arginine/proline metabolism (three), glycine/serine/threonine metabolism and TCA/glyoxylate metabolism (two each), with other one-gene categories and `Unassigned`. These are *affected-reaction groupings*, not enrichment or measured pathway activity. The mapping is identical across contexts even though some LP ratios differ because reaction rules are shared while model constraints/media differ.
+
+1. Why does an AND subunit KO differ from an OR isozyme KO?
+2. What happens to the ratio when the solver is infeasible or the WT denominator is nonpositive?
+3. Why can native-context ratios not isolate an expression-driven cancer effect?
+4. Which source evidence and review steps must precede a real 8–15-gene panel?
