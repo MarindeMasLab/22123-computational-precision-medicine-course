@@ -2,8 +2,8 @@
 # and R/ko_workflow.R.
 
 exercise5_preflight <- function(
-    ko_path = "Exercise4_disease_selective_knockouts/outputs/native_full_gene_ko.csv",
-    comparison_path = "Exercise4_disease_selective_knockouts/outputs/native_full_gene_comparison.csv",
+    ko_path = "Task4_disease_selective_knockouts/outputs/native_full_gene_ko.csv",
+    comparison_path = "Task4_disease_selective_knockouts/outputs/native_full_gene_comparison.csv",
     hard_zero_path = NULL,
     manifest_path = "config/model_manifest.csv") {
   verified <- ko_context_preflight()
@@ -299,7 +299,7 @@ exercise5_run_synthetic <- function(tolerance = 1e-7) {
   list(model = model, rows = rows, pairs = result)
 }
 
-exercise5_write_outputs <- function(output_dir = "Exercise5_synthetic_lethality/outputs") {
+exercise5_write_outputs <- function(output_dir = "Task5_synthetic_lethality/outputs") {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   stale_solutions <- file.path(output_dir, c("native_pair_context_results.csv",
     "native_pair_contrasts.csv", "native_pair_context_ratios.png"))

@@ -1,7 +1,7 @@
 # Exercise 4 workflow. Source R/model_io.R first; run from exercises/.
 ko_context_preflight <- function() {
-  qc <- utils::read.csv("Exercise2_expression_integration/outputs/reconstruction_qc.csv", stringsAsFactors = FALSE)
-  bounds <- utils::read.csv("Exercise2_expression_integration/outputs/effective_exchange_bounds.csv", stringsAsFactors = FALSE)
+  qc <- utils::read.csv("Task2_expression_integration/outputs/reconstruction_qc.csv", stringsAsFactors = FALSE)
+  bounds <- utils::read.csv("Task2_expression_integration/outputs/effective_exchange_bounds.csv", stringsAsFactors = FALSE)
   manifest <- utils::read.csv("config/model_manifest.csv", stringsAsFactors = FALSE)
   settings <- read_imat_settings("config/imat_settings.yml")
   expected <- c(MCF7_ACH_000019_Jain = "Jain_NCI60_RPMI_recipe_proxy_v2",
@@ -12,8 +12,8 @@ ko_context_preflight <- function() {
       !setequal(qc$scenario_id, names(expected)) || anyDuplicated(qc$scenario_id)) stop("Source/settings/QC provenance mismatch.")
   contexts <- list(); rows <- list()
   for (id in names(expected)) {
-    rds_path <- paste0("Exercise2_expression_integration/outputs/context_", id, ".rds")
-    if (!file.exists(paste0("Exercise2_expression_integration/outputs/context_", id, ".xml"))) {
+    rds_path <- paste0("Task2_expression_integration/outputs/context_", id, ".rds")
+    if (!file.exists(paste0("Task2_expression_integration/outputs/context_", id, ".xml"))) {
       stop("Missing matching canonical XML: ", id)
     }
     record <- readRDS(rds_path)

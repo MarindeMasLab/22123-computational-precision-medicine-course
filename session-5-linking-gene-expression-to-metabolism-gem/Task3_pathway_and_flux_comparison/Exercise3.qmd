@@ -30,7 +30,7 @@ project_root <- project_root[file.exists(file.path(project_root, "R/model_io.R")
 if (is.na(project_root)) stop("Open from the exercises root or this Exercise 3 folder.")
 project_root <- normalizePath(project_root, winslash = "/")
 setwd(project_root)
-dir.create(file.path(project_root, "Exercise3_pathway_and_flux_comparison", "outputs"),
+dir.create(file.path(project_root, "Task3_pathway_and_flux_comparison", "outputs"),
   recursive = TRUE, showWarnings = FALSE)
 source("R/model_io.R")
 hands_on <- load_model("datasets_and_models/models/RECON1_biomass.xml", "config/model_manifest.csv")
@@ -193,7 +193,7 @@ p_synthetic_range <- ggplot2::ggplot(synthetic_plot_data, ggplot2::aes(y = react
   ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
     plot.subtitle = ggplot2::element_text(color = "#526579"), panel.grid.minor = ggplot2::element_blank(),
     axis.text.y = ggplot2::element_text(face = "bold"))
-ggplot2::ggsave(file.path(project_root, "Exercise3_pathway_and_flux_comparison/outputs/synthetic_fba_fva_ranges.png"),
+ggplot2::ggsave(file.path(project_root, "Task3_pathway_and_flux_comparison/outputs/synthetic_fba_fva_ranges.png"),
   p_synthetic_range, width = 8.2, height = 4.5, dpi = 300, bg = "white")
 p_synthetic_range
 ```
@@ -223,7 +223,7 @@ p_synthetic_width <- ggplot2::ggplot(toy_fva_sensitivity,
   ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", color = "#17324D"),
     plot.subtitle = ggplot2::element_text(color = "#526579"), panel.grid.minor = ggplot2::element_blank(),
     strip.text = ggplot2::element_text(face = "bold"))
-ggplot2::ggsave(file.path(project_root, "Exercise3_pathway_and_flux_comparison/outputs/synthetic_fva_width_by_fraction.png"),
+ggplot2::ggsave(file.path(project_root, "Task3_pathway_and_flux_comparison/outputs/synthetic_fva_width_by_fraction.png"),
   p_synthetic_width, width = 9.2, height = 4.4, dpi = 300, bg = "white")
 p_synthetic_width
 ```
@@ -253,7 +253,7 @@ setwd(project_root)
 source("R/model_io.R")
 source("R/pathway_analysis.R")
 
-outputs_dir <- "Exercise2_expression_integration/outputs"
+outputs_dir <- "Task2_expression_integration/outputs"
 mcf7_rds <- file.path(outputs_dir, "context_MCF7_ACH_000019_Jain.rds")
 healthy_rds <- file.path(outputs_dir, "context_GTEx_breast_Keibler.rds")
 mcf7_xml <- file.path(outputs_dir, "context_MCF7_ACH_000019_Jain.xml")
@@ -505,7 +505,7 @@ p_native_uptake_bounds <- ggplot2::ggplot(native_bounds_data,
     panel.grid.minor = ggplot2::element_blank(), axis.text.y = ggplot2::element_text(size = 7),
     strip.text = ggplot2::element_text(face = "bold"))
 
-native_plot_dir <- file.path(project_root, "Exercise3_pathway_and_flux_comparison", "outputs")
+native_plot_dir <- file.path(project_root, "Task3_pathway_and_flux_comparison", "outputs")
 dir.create(native_plot_dir, recursive = TRUE, showWarnings = FALSE)
 ggplot2::ggsave(file.path(native_plot_dir, "native_fba_fva_ranges.png"), p_native_range,
   width = 12, height = 14, dpi = 300, bg = "white")
@@ -523,7 +523,7 @@ The native FVA figure includes all 17 measured common exchange reactions. The wi
 ```{r}
 #| label: save-native-fva-outputs
 #| include: false
-exercise3_outputs <- file.path(project_root, "Exercise3_pathway_and_flux_comparison", "outputs")
+exercise3_outputs <- file.path(project_root, "Task3_pathway_and_flux_comparison", "outputs")
 dir.create(exercise3_outputs, recursive = TRUE, showWarnings = FALSE)
 utils::write.csv(native_comparison,
   file.path(exercise3_outputs, "native_context_fva_comparison.csv"), row.names = FALSE)

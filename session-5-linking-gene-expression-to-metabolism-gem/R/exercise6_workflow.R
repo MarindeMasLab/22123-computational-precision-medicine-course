@@ -40,12 +40,12 @@ exercise6_normalize_exchange <- function(ids) {
 }
 
 exercise6_load_preflight <- function(root, settings) {
-  model_path <- file.path(root, "Exercise2_expression_integration/outputs/context_MCF7_ACH_000019_Jain.rds")
-  healthy_path <- file.path(root, "Exercise2_expression_integration/outputs/context_GTEx_breast_Keibler.rds")
-  fva_path <- file.path(root, "Exercise3_pathway_and_flux_comparison/outputs/native_context_fva_comparison.csv")
-  fva_provenance_path <- file.path(root, "Exercise3_pathway_and_flux_comparison/outputs/native_context_fva_provenance.csv")
-  qc_path <- file.path(root, "Exercise2_expression_integration/outputs/reconstruction_qc.csv")
-  bounds_path <- file.path(root, "Exercise2_expression_integration/outputs/effective_exchange_bounds.csv")
+  model_path <- file.path(root, "Task2_expression_integration/outputs/context_MCF7_ACH_000019_Jain.rds")
+  healthy_path <- file.path(root, "Task2_expression_integration/outputs/context_GTEx_breast_Keibler.rds")
+  fva_path <- file.path(root, "Task3_pathway_and_flux_comparison/outputs/native_context_fva_comparison.csv")
+  fva_provenance_path <- file.path(root, "Task3_pathway_and_flux_comparison/outputs/native_context_fva_provenance.csv")
+  qc_path <- file.path(root, "Task2_expression_integration/outputs/reconstruction_qc.csv")
+  bounds_path <- file.path(root, "Task2_expression_integration/outputs/effective_exchange_bounds.csv")
   required <- c(model_path, healthy_path, fva_path, fva_provenance_path, qc_path, bounds_path)
   exercise6_assert(all(file.exists(required)), "Canonical context/FVA/QC artifact is missing.")
 
@@ -277,7 +277,7 @@ exercise6_plot_confusion <- function(confusion_tables, output_dir) {
 
 exercise6_run <- function(root = if (dir.exists("datasets_and_models")) "." else "..") {
   if (!exists("run_fva", mode = "function")) source(file.path(root, "R", "model_io.R"))
-  output_dir <- file.path(root, "Exercise6_validation", "outputs")
+  output_dir <- file.path(root, "Task6_validation", "outputs")
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   settings_path <- file.path(root, "config", "validation_settings.yml")
   settings <- exercise6_read_settings(settings_path); settings$path <- settings_path

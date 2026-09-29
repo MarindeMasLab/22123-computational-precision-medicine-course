@@ -1,7 +1,7 @@
 # Run from hands-on_session/: Rscript R/run_full_screen.R
 source("R/model_io.R")
 source("R/ko_workflow.R")
-out <- "Exercise4_disease_selective_knockouts/outputs"
+out <- "Task4_disease_selective_knockouts/outputs"
 dir.create(out, recursive = TRUE, showWarnings = FALSE)
 verified <- ko_context_preflight()
 utils::write.csv(verified$qc, file.path(out, "native_wt_qc.csv"), row.names = FALSE)

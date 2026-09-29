@@ -32,10 +32,10 @@ setwd(project_root)
 knitr::opts_knit$set(root.dir = normalizePath("."))
 source("R/model_io.R")
 source("R/ko_workflow.R")
-output_dir <- "Exercise4_disease_selective_knockouts/outputs"
+output_dir <- "Task4_disease_selective_knockouts/outputs"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 verified <- ko_context_preflight()
-stopifnot(all(file.exists(file.path("Exercise2_expression_integration/outputs",
+stopifnot(all(file.exists(file.path("Task2_expression_integration/outputs",
   paste0("context_", names(verified$contexts), ".xml")))))
 utils::write.csv(verified$qc, file.path(output_dir, "native_wt_qc.csv"), row.names = FALSE)
 verified$qc[, c("context", "medium_id", "objective_id", "milp_status",

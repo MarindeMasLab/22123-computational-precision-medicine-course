@@ -46,7 +46,7 @@ source("R/ko_workflow.R")
 source("R/exercise5_workflow.R")
 exercise5 <- exercise5_write_outputs()
 preflight <- exercise5$preflight
-context_qc <- read.csv("Exercise5_synthetic_lethality/outputs/canonical_context_preflight.csv",
+context_qc <- read.csv("Task5_synthetic_lethality/outputs/canonical_context_preflight.csv",
   stringsAsFactors = FALSE, check.names = FALSE)
 context_qc[, c("context", "medium_id", "objective_id", "wt_status", "wt_objective",
   "wt_max_abs_sv", "source_model_sha256", "context_rds_sha256")]
@@ -110,7 +110,7 @@ The persisted WT/single/pair table retains objective values, residuals, ratios, 
 ```{r}
 #| label: synthetic-wt-single-pair-table
 synthetic_rows <- read.csv(
-  "Exercise5_synthetic_lethality/outputs/synthetic_wt_single_pair.csv",
+  "Task5_synthetic_lethality/outputs/synthetic_wt_single_pair.csv",
   stringsAsFactors = FALSE, check.names = FALSE)
 synthetic_rows[, c("condition", "deleted_genes", "affected_reactions", "status",
   "objective_value", "max_abs_sv", "ratio_to_wt", "objective_id", "medium_id",
@@ -124,7 +124,7 @@ synthetic_rows[, c("condition", "deleted_genes", "affected_reactions", "status",
 ```{r}
 #| label: synthetic-pair-classification
 synthetic_pairs <- read.csv(
-  "Exercise5_synthetic_lethality/outputs/synthetic_pair_classification.csv",
+  "Task5_synthetic_lethality/outputs/synthetic_pair_classification.csv",
   stringsAsFactors = FALSE, check.names = FALSE)
 synthetic_pairs[, c("pair_id", "gene_a", "gene_b", "single_a_status",
   "single_a_ratio", "single_b_status", "single_b_ratio", "pair_status",
@@ -158,10 +158,10 @@ The predeclared rule excludes MCF7 single KOs with invalid results or $r<0.50$ a
 #| label: native-pair-panel-gate
 #| output: false
 native_panel_status <- read.csv(
-  "Exercise5_synthetic_lethality/outputs/native_pair_panel_status.csv",
+  "Task5_synthetic_lethality/outputs/native_pair_panel_status.csv",
   stringsAsFactors = FALSE, check.names = FALSE)
 native_audit <- read.csv(
-  "Exercise5_synthetic_lethality/outputs/native_pair_panel_audit.csv",
+  "Task5_synthetic_lethality/outputs/native_pair_panel_audit.csv",
   stringsAsFactors = FALSE, check.names = FALSE)
 native_panel_status
 native_audit[native_audit$selection_rank <= 10,

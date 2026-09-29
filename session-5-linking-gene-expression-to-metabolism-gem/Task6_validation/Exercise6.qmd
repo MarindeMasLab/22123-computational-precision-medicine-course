@@ -113,4 +113,4 @@ The plots retain ambiguous and unscored states. The GTEx/Keibler assessment uses
 
 ## Submission
 
-Submit the generated `Exercise6_validation/outputs/` tables and figures, the scoreable denominator and coverage counts, and a short interpretation that names the validated procedure precisely: **LOOCV of a direction classifier built from GEM features**, with a fixed expression-only FBA/FVA assessment as the untuned baseline.
+Submit the generated `Task6_validation/outputs/` tables and figures, the scoreable denominator and coverage counts, and a short interpretation that names the validated procedure precisely: **LOOCV of a direction classifier built from GEM features**, with a fixed expression-only FBA/FVA assessment as the untuned baseline.

@@ -370,14 +370,14 @@ reaction_count_table
 
 ## 5. Save reusable models and provenance QC
 
-If both reconstructions return optimal solutions or constraint-verified time-limit incumbents and pass post-reconstruction FBA checks, the next chunk writes two reusable scenario-specific RDS files, two SBML/XML exports, and tabular QC to `Exercise2_expression_integration/outputs/`. The RDS files retain the full MILP solution and provenance; the XML files provide interoperable network models with the effective scenario exchange bounds. No values are hard-coded as results; a solver failure reports its status and writes no biological context checkpoint.
+If both reconstructions return optimal solutions or constraint-verified time-limit incumbents and pass post-reconstruction FBA checks, the next chunk writes two reusable scenario-specific RDS files, two SBML/XML exports, and tabular QC to `Task2_expression_integration/outputs/`. The RDS files retain the full MILP solution and provenance; the XML files provide interoperable network models with the effective scenario exchange bounds. No values are hard-coded as results; a solver failure reports its status and writes no biological context checkpoint.
 
 The exported models are `context_MCF7_ACH_000019_Jain.xml` and `context_GTEx_breast_Keibler.xml`. SBML preserves the Recon1 network, objective, and capped scenario exchange-medium bounds; it does not encode the iMAT inactivity limits. The RDS files preserve both the pre-iMAT scenario model and the integrated model, selected MILP fluxes, reaction evidence, solver QC, and provenance metadata.
 
 ```{r}
 #| label: persist-context-models-and-qc
 setwd(project_root)
-output_dir <- "Exercise2_expression_integration/outputs"
+output_dir <- "Task2_expression_integration/outputs"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 write.csv(reaction_count_table, file.path(output_dir, "reaction_count_comparison.csv"), row.names = FALSE)
 settings_path <- "config/imat_settings.yml"
