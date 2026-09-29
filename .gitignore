@@ -1,0 +1,21 @@
+# Quarto and generated teaching outputs
+**/outputs/
+**/*_files/
+**/*.html
+**/*.knit.md
+
+# R session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*~
