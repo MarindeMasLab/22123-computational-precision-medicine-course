@@ -72,7 +72,7 @@ result$coverage
 ```{r}
 result$folds[1, ]
 result$folds[result$folds$scoreable, ][1, ]
-utils::read.csv("outputs/grouped_loocv_fold_assignments.csv")[1, ]
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "grouped_loocv_fold_assignments.csv"))[1, ]
 ```
 
 **Run this:** compare the held-out exchange and its source-row IDs with the training exchange IDs.
@@ -84,7 +84,7 @@ utils::read.csv("outputs/grouped_loocv_fold_assignments.csv")[1, ]
 ```{r}
 result$metrics
 table(result$folds$scoreable, result$folds$unscored_reason, useNA = "ifany")
-utils::read.csv("outputs/loocv_confusion_matrix.csv")
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "loocv_confusion_matrix.csv"))
 ```
 
 **Run this:** report the scoreable denominator, ambiguous held-out folds, unsupported folds, and failed folds separately.
@@ -96,10 +96,10 @@ utils::read.csv("outputs/loocv_confusion_matrix.csv")
 ## 6. Compare model accuracy and confusion matrices
 
 ```{r}
-utils::read.csv("outputs/model_accuracy_summary.csv")
-utils::read.csv("outputs/mcf7_jain_confusion_matrix.csv")
-utils::read.csv("outputs/gtex_keibler_confusion_matrix.csv")
-knitr::include_graphics("outputs/model_confusion_matrices.png")
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "model_accuracy_summary.csv"))
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "mcf7_jain_confusion_matrix.csv"))
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "gtex_keibler_confusion_matrix.csv"))
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "model_confusion_matrices.png"))
 ```
 
 **Expected result:** MCF7/Jain accuracy is **35/40 = 87.5%**; GTEx/Keibler accuracy is **9/10 = 90.0%**. Three MCF7 groups and eight GTEx groups are ambiguous and excluded from their respective accuracy denominators.
@@ -109,9 +109,9 @@ knitr::include_graphics("outputs/model_confusion_matrices.png")
 ## 7. Inspect figures and limitations
 
 ```{r}
-knitr::include_graphics("outputs/measured_direction_vs_model_allowed.png")
-knitr::include_graphics("outputs/coverage_status.png")
-knitr::include_graphics("outputs/loocv_predictions_observed.png")
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "measured_direction_vs_model_allowed.png"))
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "coverage_status.png"))
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "loocv_predictions_observed.png"))
 ```
 
 The plots retain ambiguous and unscored states. The GTEx/Keibler assessment uses all 900 mapped Keibler rows across 18 exchange groups, but its source units are unstated and its tissue/culture sources are unmatched. Do not use Exercise 4 KO or Exercise 5 pair-screen outcomes as validation evidence; they remain downstream model hypotheses. Do not claim matched normal validation, tumor specificity, clinical utility, correlation, or absolute-rate agreement.
