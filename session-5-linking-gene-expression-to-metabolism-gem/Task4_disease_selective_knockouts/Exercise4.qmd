@@ -179,6 +179,8 @@ The synthetic KO results are not a biological panel or an Agent 5 biological sin
 
 The instructor runs the long computation from the exercises root with the shared R workflow (the full screen is not recomputed on every worksheet render). The input to this section is the generated full-gene CSV, not a fabricated 8–15-gene validated panel. Every gene ID in the corrected Recon1 is represented in both contexts, including no-GPR and failed rows. Only rows marked computationally eligible have a numeric ratio. The `WT_reused_identical_bounds` method means the knockout left all model bounds unchanged; no LP was needed to demonstrate the same feasible set, **not** that the gene is biologically nonessential.
 
+> **Required before running this section.** From the `session-5-linking-gene-expression-to-metabolism-gem/` root, first render `Task1_model_and_baseline_FBA/Exercise1.qmd` and `Task2_expression_integration/Exercise2.qmd`. Then run `Rscript R/run_full_screen.R` to generate the native full-gene KO tables and complete their QC. Finally render this Task 4 worksheet. Without those Task 2 context outputs and the full-screen runner, the census files do not exist and this chunk stops with the message to run the documented full-screen runner.
+
 ```{r}
 #| label: ex4-student-full-census
 full_path <- file.path(output_dir, "native_full_gene_ko.csv")
