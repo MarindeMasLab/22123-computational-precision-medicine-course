@@ -3,7 +3,7 @@ message: "If you use these teaching materials, please cite the repository and th
 title: "Computational Precision Medicine: Linking Gene Expression to Metabolism"
 type: educational
 abstract: "Teaching materials for an R-based genome-scale metabolic modeling session."
-repository-code: "https://github.com/marindemaslab/computational-precision-medicine"
+repository-code: "https://github.com/MarindeMasLab/22123-computational-precision-medicine-course"
 license: MIT
 authors:
   - name: "Marindemas Lab"

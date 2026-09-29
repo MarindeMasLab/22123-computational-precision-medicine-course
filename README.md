@@ -20,4 +20,4 @@ These are teaching materials. FBA, FVA, context reconstruction, knockout, and pa
 
 ## Status
 
-This repository is being prepared for public release under the `marindemaslab` organization. The private development tree and instructor answer keys are maintained separately.
+This repository is published under the `MarindeMasLab` organization. The private development tree and instructor answer keys are maintained separately.
