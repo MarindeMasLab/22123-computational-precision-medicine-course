@@ -63,8 +63,8 @@ result$coverage
 ## 4. Run this: grouped fold and leakage check
 
 ```{r}
-assignments <- utils::read.csv("outputs/grouped_loocv_fold_assignments.csv")
-folds <- utils::read.csv("outputs/grouped_loocv_predictions.csv")
+assignments <- utils::read.csv(file.path(root, "Task6_validation", "outputs", "grouped_loocv_fold_assignments.csv"))
+folds <- utils::read.csv(file.path(root, "Task6_validation", "outputs", "grouped_loocv_predictions.csv"))
 stopifnot(nrow(assignments) == 43L, nrow(folds) == 43L,
   all(assignments$no_heldout_source_row_in_training),
   all(assignments$no_heldout_exchange_in_training),
@@ -81,7 +81,7 @@ assignments[1, ]
 ```{r}
 result$metrics
 table(folds$unscored_reason, useNA = "ifany")
-utils::read.csv("outputs/loocv_confusion_matrix.csv")
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "loocv_confusion_matrix.csv"))
 ```
 
 **Expected result:** 40 folds are scoreable and 3 are explicitly ambiguous held-out folds. The metrics denominator is 40 for both the fold-trained classifier and the training-fold majority baseline.
@@ -91,10 +91,10 @@ utils::read.csv("outputs/loocv_confusion_matrix.csv")
 ## 6. Run this: per-model accuracy and confusion matrices
 
 ```{r}
-utils::read.csv("outputs/model_accuracy_summary.csv")
-utils::read.csv("outputs/mcf7_jain_confusion_matrix.csv")
-utils::read.csv("outputs/gtex_keibler_confusion_matrix.csv")
-knitr::include_graphics("outputs/model_confusion_matrices.png")
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "model_accuracy_summary.csv"))
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "mcf7_jain_confusion_matrix.csv"))
+utils::read.csv(file.path(root, "Task6_validation", "outputs", "gtex_keibler_confusion_matrix.csv"))
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "model_confusion_matrices.png"))
 ```
 
 **Expected result:** MCF7/Jain is **35/40 = 87.5%** and GTEx/Keibler is **9/10 = 90.0%**. The MCF7 confusion matrix is 23/5 for observed uptake and 0/12 for observed secretion; the GTEx/Keibler matrix is 5/1 and 0/4. The remaining groups are explicitly ambiguous and unscored.
@@ -104,9 +104,9 @@ knitr::include_graphics("outputs/model_confusion_matrices.png")
 ## 7. Run this: figures and release claims
 
 ```{r}
-knitr::include_graphics("outputs/measured_direction_vs_model_allowed.png")
-knitr::include_graphics("outputs/coverage_status.png")
-knitr::include_graphics("outputs/loocv_predictions_observed.png")
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "measured_direction_vs_model_allowed.png"))
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "coverage_status.png"))
+knitr::include_graphics(file.path(root, "Task6_validation", "outputs", "loocv_predictions_observed.png"))
 ```
 
 **Expected result:** the figures distinguish held-out Jain directions from model-derived FVA allowance and show every fold, including unsupported and ambiguous states.
